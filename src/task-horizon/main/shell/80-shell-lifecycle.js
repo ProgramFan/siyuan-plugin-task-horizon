@@ -177,6 +177,7 @@ if (shouldMarkDirty) {
             state.currentRule = SettingsStore.data.currentRule;
             state.columnWidths = SettingsStore.data.columnWidths;
             state.docTabsHidden = !!Storage.get('tm_doc_tabs_hidden', false);
+            state.docTabsCollapsed = Storage.get('tm_doc_tabs_collapsed', true) !== false;
 
             // 加载筛选规则
             state.filterRules = await __tmEnsureFilterRulesLoaded();

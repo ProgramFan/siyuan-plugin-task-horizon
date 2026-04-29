@@ -2017,6 +2017,23 @@
         return `${pad2(hh)}:${pad2(mm)}`;
     }
 
+    function normalizeQuickAddScheduleTimeMode(value) {
+        const mode = String(value || '').trim();
+        return (mode === 'nextHour' || mode === 'custom') ? mode : 'current';
+    }
+
+    function normalizeQuickAddScheduleCustomTime(value, fallback = '09:00') {
+        const raw = String(value || '').trim();
+        const safeFallback = String(fallback || '').trim() || '09:00';
+        const m = raw.match(/^(\d{1,2}):(\d{2})$/);
+        if (!m) return safeFallback;
+        const hh = Number(m[1]);
+        const mm = Number(m[2]);
+        if (!Number.isInteger(hh) || !Number.isInteger(mm)) return safeFallback;
+        if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return safeFallback;
+        return `${pad2(hh)}:${pad2(mm)}`;
+    }
+
     function getCalendarVisibleSlotRange(settings) {
         const start = normalizeCalendarVisibleTime(settings?.visibleStartTime, '00:00', false);
         const end = normalizeCalendarVisibleTime(settings?.visibleEndTime, '24:00', true);
@@ -3364,6 +3381,8 @@
         const monthMinVisibleEvents0 = normalizeCalendarMonthMinVisibleEvents(readStoredString('tm_calendar_month_min_visible_events', s.calendarMonthMinVisibleEvents).trim() || '3');
         const visibleStartTime0 = normalizeCalendarVisibleTime(readStoredString('tm_calendar_visible_start_time', s.calendarVisibleStartTime).trim() || '00:00', '00:00', false);
         const visibleEndTime0 = normalizeCalendarVisibleTime(readStoredString('tm_calendar_visible_end_time', s.calendarVisibleEndTime).trim() || '24:00', '24:00', true);
+        const quickAddScheduleTimeMode0 = normalizeQuickAddScheduleTimeMode(readStoredString('tm_calendar_quick_add_schedule_time_mode', s.calendarQuickAddScheduleTimeMode).trim() || 'current');
+        const quickAddScheduleCustomTime0 = normalizeQuickAddScheduleCustomTime(readStoredString('tm_calendar_quick_add_schedule_custom_time', s.calendarQuickAddScheduleCustomTime).trim() || '09:00');
         const threeDayTodayPosition0 = normalizeCalendar3DayTodayPosition(readStoredString('tm_calendar_3day_today_position', s.calendar3DayTodayPosition).trim() || '1');
         return {
             enabled: !!s.calendarEnabled,
@@ -3380,6 +3399,8 @@
             showTaskDates: s.calendarShowTaskDates !== false,
             hideScheduledTaskDatesInAllDay: readStoredBool('tm_calendar_hide_scheduled_task_dates_in_all_day', typeof s.calendarHideScheduledTaskDatesInAllDay === 'boolean' ? !!s.calendarHideScheduledTaskDatesInAllDay : undefined),
             newScheduleMaxDurationMin: normalizeNewScheduleMaxDuration(s.calendarNewScheduleMaxDurationMin),
+            quickAddScheduleTimeMode: quickAddScheduleTimeMode0,
+            quickAddScheduleCustomTime: quickAddScheduleCustomTime0,
             hourSlotHeightMode: hourSlotHeightMode0,
             monthAdaptiveRowHeight: monthAdaptiveRowHeight0,
             monthMinVisibleEvents: monthMinVisibleEvents0,
@@ -8446,11 +8467,13 @@
     async function addTaskSchedule(input) {
         const base = (input && typeof input === 'object') ? input : {};
         const taskId = String(base.taskId || '').trim();
+        const blockId = getScheduleLinkedBlockId(base);
+        const docId = getScheduleLinkedDocId(base);
         let startMs = toMs(base.start);
         let endMs = toMs(base.end);
         const durationMin = Number(base.durationMin);
         const forceAllDay = base.allDay === true;
-        if (!taskId || !Number.isFinite(startMs) || startMs <= 0) throw new Error('invalid schedule payload');
+        if ((!taskId && !blockId) || !Number.isFinite(startMs) || startMs <= 0) throw new Error('invalid schedule payload');
         if (forceAllDay) {
             const sDate = new Date(startMs);
             sDate.setHours(0, 0, 0, 0);
@@ -8507,6 +8530,8 @@
             color,
             calendarId,
             taskId,
+            blockId,
+            docId,
             reminderMode: 'inherit',
             reminderEnabled: null,
             reminderOffsetMin: null,
@@ -15194,6 +15219,18 @@
                     </select>
                 </div>
                 <div class="tm-calendar-settings-row">
+                    <div class="tm-calendar-settings-label">文档中块菜单添加至今天日程的默认时间</div>
+                    <select class="tm-calendar-settings-select" data-tm-cal-setting="calendarQuickAddScheduleTimeMode">
+                        <option value="current" ${s.quickAddScheduleTimeMode === 'current' ? 'selected' : ''}>当前时间</option>
+                        <option value="nextHour" ${s.quickAddScheduleTimeMode === 'nextHour' ? 'selected' : ''}>下一个整点</option>
+                        <option value="custom" ${s.quickAddScheduleTimeMode === 'custom' ? 'selected' : ''}>自定义时间</option>
+                    </select>
+                </div>
+                <div class="tm-calendar-settings-row" style="${s.quickAddScheduleTimeMode === 'custom' ? '' : 'opacity:0.55;pointer-events:none;'}">
+                    <div class="tm-calendar-settings-label">自定义添加时间</div>
+                    <input class="tm-calendar-settings-select" style="height:34px;" type="time" data-tm-cal-setting="calendarQuickAddScheduleCustomTime" value="${esc(String(s.quickAddScheduleCustomTime || '09:00'))}" ${s.quickAddScheduleTimeMode === 'custom' ? '' : 'disabled'}>
+                </div>
+                <div class="tm-calendar-settings-row">
                     <div class="tm-calendar-settings-label">显示农历</div>
                     <input class="b3-switch fn__flex-center" type="checkbox" data-tm-cal-setting="calendarShowLunar" ${s.showLunar ? 'checked' : ''}>
                 </div>
@@ -15282,6 +15319,10 @@
                 const allowed = new Set([60, 120, 180, 240]);
                 const num = Number(el.value);
                 store.data[key] = allowed.has(num) ? num : 60;
+            } else if (key === 'calendarQuickAddScheduleTimeMode') {
+                store.data[key] = normalizeQuickAddScheduleTimeMode(el.value);
+            } else if (key === 'calendarQuickAddScheduleCustomTime') {
+                store.data[key] = normalizeQuickAddScheduleCustomTime(el.value);
             } else if (key === 'calendarHourSlotHeightMode') {
                 store.data[key] = normalizeCalendarHourSlotHeightMode(el.value);
             } else if (key === 'calendarMonthMinVisibleEvents') {
@@ -15369,6 +15410,8 @@
                         if (root) renderSidebar(root, getSettings());
                     } catch (e2) {}
                     try { refetchAllCalendars(); } catch (e2) {}
+                } else if (key === 'calendarQuickAddScheduleTimeMode') {
+                    try { renderSettings(containerEl, store); } catch (e2) {}
                 } else if (key === 'calendarNewScheduleMaxDurationMin') {
                     try {
                         const root = state.wrapEl;

@@ -57,7 +57,7 @@
         h2: 180,
         priority: 96,
         startDate: 90,
-        completionTime: 170,
+        completionTime: 90,
         remainingTime: 116,
         duration: 96,
         spent: 96,
@@ -73,13 +73,15 @@
         h2: 12,
         priority: 8,
         startDate: 7,
-        completionTime: 18,
+        completionTime: 7,
         remainingTime: 10,
         duration: 8,
         spent: 8,
         remark: 19,
         attachments: 14,
     };
+    const __TM_FIXED_DATE_COLUMN_KEYS = Object.freeze(['startDate', 'completionTime']);
+    const __TM_FIXED_DATE_COLUMN_FALLBACK_WIDTH = 104;
     const __TM_CUSTOM_FIELD_ATTR_PREFIX = 'custom-tm-';
     const __TM_CUSTOM_FIELD_COLUMN_PREFIX = 'cf:';
     const __TM_TASK_ATTACHMENT_ATTR_PREFIX = 'custom-data-assets-th-';
@@ -97,6 +99,146 @@
     ];
     const __tmCustomFieldAttrBackfillInFlight = new Set();
     const __tmTaskAttachmentBlockMetaCache = new Map();
+    const __tmFixedDateColumnWidthCache = new Map();
+    let __tmFixedDateMeasureCanvas = null;
+
+    function __tmIsFixedDateColumn(key) {
+        return __TM_FIXED_DATE_COLUMN_KEYS.includes(String(key || '').trim());
+    }
+
+    function __tmGetMeasureFontFromStyle(style) {
+        if (!style) return '14px sans-serif';
+        const direct = String(style.font || '').trim();
+        if (direct) return direct;
+        const fontStyle = String(style.fontStyle || 'normal').trim() || 'normal';
+        const fontVariant = String(style.fontVariant || 'normal').trim() || 'normal';
+        const fontWeight = String(style.fontWeight || '400').trim() || '400';
+        const fontSize = String(style.fontSize || '14px').trim() || '14px';
+        const fontFamily = String(style.fontFamily || 'sans-serif').trim() || 'sans-serif';
+        return `${fontStyle} ${fontVariant} ${fontWeight} ${fontSize} ${fontFamily}`;
+    }
+
+    function __tmReplaceFontSizeForMeasure(font, fontSize) {
+        const size = Number(fontSize);
+        if (!Number.isFinite(size) || size <= 0) return font;
+        const nextSize = `${size}px`;
+        const text = String(font || '').trim() || '14px sans-serif';
+        return /\d+(?:\.\d+)?px/.test(text)
+            ? text.replace(/\d+(?:\.\d+)?px/, nextSize)
+            : `${nextSize} ${text}`;
+    }
+
+    function __tmParseStylePx(value, fallback = 0) {
+        const n = parseFloat(String(value || ''));
+        return Number.isFinite(n) ? n : fallback;
+    }
+
+    function __tmGetDateColumnMeasureElement(selectorList) {
+        if (typeof document === 'undefined' || !document?.querySelector) return null;
+        for (const selector of selectorList) {
+            try {
+                const el = document.querySelector(selector);
+                if (el) return el;
+            } catch (e) {}
+        }
+        return null;
+    }
+
+    function __tmBuildDateColumnMeasureInfo(colKey, kind) {
+        const selectorKey = String(colKey || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        const isHeader = kind === 'header';
+        const selectors = isHeader
+            ? [
+                `.tm-table th[data-col="${selectorKey}"]`,
+                '.tm-timeline-table-left thead th',
+                '.tm-table thead th',
+            ]
+            : [
+                `.tm-table td.tm-task-meta-cell[data-tm-task-time-field="${selectorKey}"]`,
+                `.tm-table td[data-tm-task-time-field="${selectorKey}"]`,
+                '.tm-timeline-table-left td.tm-task-meta-cell',
+                '.tm-table td.tm-task-meta-cell',
+                '.tm-table td',
+            ];
+        const el = __tmGetDateColumnMeasureElement(selectors);
+        let style = null;
+        try {
+            const target = el || document?.body || document?.documentElement || null;
+            style = target && typeof getComputedStyle === 'function' ? getComputedStyle(target) : null;
+        } catch (e) {}
+        const font = __tmGetMeasureFontFromStyle(style);
+        let fontSize = __tmParseStylePx(style?.fontSize, 14);
+        let resolvedFont = font;
+        if (!el && typeof document !== 'undefined' && typeof getComputedStyle === 'function') {
+            try {
+                const rootStyle = getComputedStyle(document.documentElement);
+                const tableFontSize = __tmParseStylePx(rootStyle?.getPropertyValue?.('--tm-font-size'), 0);
+                if (tableFontSize > 0) {
+                    fontSize = tableFontSize;
+                    resolvedFont = __tmReplaceFontSizeForMeasure(font, tableFontSize);
+                }
+            } catch (e) {}
+        }
+        const letterSpacing = __tmParseStylePx(style?.letterSpacing, 0);
+        const paddingX = style
+            ? (__tmParseStylePx(style.paddingLeft, isHeader ? 4 : 6) + __tmParseStylePx(style.paddingRight, isHeader ? 4 : 6))
+            : (isHeader ? 8 : 12);
+        const borderX = style
+            ? (__tmParseStylePx(style.borderLeftWidth, 0) + __tmParseStylePx(style.borderRightWidth, 1))
+            : 1;
+        return {
+            font: resolvedFont,
+            fontSize,
+            letterSpacing,
+            paddingX,
+            borderX,
+        };
+    }
+
+    function __tmMeasureDateColumnText(text, info) {
+        const value = String(text || '');
+        if (!value) return 0;
+        try {
+            if (!__tmFixedDateMeasureCanvas && typeof document !== 'undefined') {
+                __tmFixedDateMeasureCanvas = document.createElement('canvas');
+            }
+            const ctx = __tmFixedDateMeasureCanvas?.getContext?.('2d');
+            if (ctx) {
+                ctx.font = info.font;
+                const base = ctx.measureText(value).width;
+                const spacing = Number(info.letterSpacing) || 0;
+                return base + Math.max(0, value.length - 1) * spacing;
+            }
+        } catch (e) {}
+        return value.length * (Number(info.fontSize) || 14) * 0.62;
+    }
+
+    function __tmGetFixedDateColumnWidth(column) {
+        const colKey = String(column || '').trim();
+        const bodyInfo = __tmBuildDateColumnMeasureInfo(colKey, 'body');
+        const headerInfo = __tmBuildDateColumnMeasureInfo(colKey, 'header');
+        const headerText = colKey === 'startDate' ? '开始日期' : '截止日期';
+        const cacheKey = [
+            colKey,
+            bodyInfo.font,
+            bodyInfo.letterSpacing,
+            bodyInfo.paddingX,
+            bodyInfo.borderX,
+            headerInfo.font,
+            headerInfo.letterSpacing,
+            headerInfo.paddingX,
+            headerInfo.borderX,
+        ].join('|');
+        if (__tmFixedDateColumnWidthCache.has(cacheKey)) return __tmFixedDateColumnWidthCache.get(cacheKey);
+        const dateWidth = __tmMeasureDateColumnText('2026-04-29', bodyInfo) + bodyInfo.paddingX + bodyInfo.borderX;
+        const headerWidth = __tmMeasureDateColumnText(headerText, headerInfo) + headerInfo.paddingX + headerInfo.borderX;
+        const width = Math.max(
+            80,
+            Math.min(320, Math.ceil(Math.max(dateWidth, headerWidth) + 8))
+        );
+        __tmRememberSmallCache(__tmFixedDateColumnWidthCache, cacheKey, width, 48);
+        return width || __TM_FIXED_DATE_COLUMN_FALLBACK_WIDTH;
+    }
 
     function __tmParseVersionNumber(value) {
         const n = Number(value);
@@ -2080,6 +2222,8 @@
             calendarScheduleFollowDocColor: false,
             calendar3DayTodayPosition: 1,
             calendarNewScheduleMaxDurationMin: 60,
+            calendarQuickAddScheduleTimeMode: 'current',
+            calendarQuickAddScheduleCustomTime: '09:00',
             calendarHourSlotHeightMode: 'normal',
             calendarVisibleStartTime: '00:00',
             calendarVisibleEndTime: '24:00',
@@ -2597,6 +2741,8 @@
                                 if (typeof cloudData.calendarScheduleFollowDocColor === 'boolean') this.data.calendarScheduleFollowDocColor = cloudData.calendarScheduleFollowDocColor;
                                 if (typeof cloudData.calendar3DayTodayPosition === 'number') this.data.calendar3DayTodayPosition = cloudData.calendar3DayTodayPosition;
                                 if (typeof cloudData.calendarNewScheduleMaxDurationMin === 'number') this.data.calendarNewScheduleMaxDurationMin = cloudData.calendarNewScheduleMaxDurationMin;
+                                if (typeof cloudData.calendarQuickAddScheduleTimeMode === 'string') this.data.calendarQuickAddScheduleTimeMode = cloudData.calendarQuickAddScheduleTimeMode;
+                                if (typeof cloudData.calendarQuickAddScheduleCustomTime === 'string') this.data.calendarQuickAddScheduleCustomTime = cloudData.calendarQuickAddScheduleCustomTime;
                                 if (typeof cloudData.calendarHourSlotHeightMode === 'string') this.data.calendarHourSlotHeightMode = cloudData.calendarHourSlotHeightMode;
                                 if (typeof cloudData.calendarVisibleStartTime === 'string') this.data.calendarVisibleStartTime = cloudData.calendarVisibleStartTime;
                                 if (typeof cloudData.calendarVisibleEndTime === 'string') this.data.calendarVisibleEndTime = cloudData.calendarVisibleEndTime;
@@ -2963,6 +3109,8 @@
             this.data.calendarScheduleFollowDocColor = !!Storage.get('tm_calendar_schedule_follow_doc_color', this.data.calendarScheduleFollowDocColor);
             this.data.calendar3DayTodayPosition = Number(Storage.get('tm_calendar_3day_today_position', this.data.calendar3DayTodayPosition));
             this.data.calendarNewScheduleMaxDurationMin = Number(Storage.get('tm_calendar_new_schedule_max_duration_min', this.data.calendarNewScheduleMaxDurationMin));
+            this.data.calendarQuickAddScheduleTimeMode = String(Storage.get('tm_calendar_quick_add_schedule_time_mode', this.data.calendarQuickAddScheduleTimeMode) || 'current');
+            this.data.calendarQuickAddScheduleCustomTime = String(Storage.get('tm_calendar_quick_add_schedule_custom_time', this.data.calendarQuickAddScheduleCustomTime) || '09:00');
             this.data.calendarHourSlotHeightMode = Storage.get('tm_calendar_hour_slot_height_mode', this.data.calendarHourSlotHeightMode);
             this.data.calendarVisibleStartTime = String(Storage.get('tm_calendar_visible_start_time', this.data.calendarVisibleStartTime) || this.data.calendarVisibleStartTime || '00:00');
             this.data.calendarVisibleEndTime = String(Storage.get('tm_calendar_visible_end_time', this.data.calendarVisibleEndTime) || this.data.calendarVisibleEndTime || '24:00');
@@ -3330,6 +3478,8 @@
             Storage.set('tm_calendar_schedule_follow_doc_color', !!this.data.calendarScheduleFollowDocColor);
             Storage.set('tm_calendar_3day_today_position', Number(this.data.calendar3DayTodayPosition) || 1);
             Storage.set('tm_calendar_new_schedule_max_duration_min', Number(this.data.calendarNewScheduleMaxDurationMin) || 60);
+            Storage.set('tm_calendar_quick_add_schedule_time_mode', String(this.data.calendarQuickAddScheduleTimeMode || 'current').trim() || 'current');
+            Storage.set('tm_calendar_quick_add_schedule_custom_time', String(this.data.calendarQuickAddScheduleCustomTime || '09:00').trim() || '09:00');
             Storage.set('tm_calendar_hour_slot_height_mode', String(this.data.calendarHourSlotHeightMode || 'normal').trim() || 'normal');
             Storage.set('tm_calendar_visible_start_time', String(this.data.calendarVisibleStartTime || '00:00').trim() || '00:00');
             Storage.set('tm_calendar_visible_end_time', String(this.data.calendarVisibleEndTime || '24:00').trim() || '24:00');
@@ -3494,6 +3644,10 @@
                 });
             }
             defaultOrder.forEach(k => {
+                if (__tmIsFixedDateColumn(k)) {
+                    widths[k] = __tmGetFixedDateColumnWidth(k);
+                    return;
+                }
                 const raw = Number(widths[k]);
                 const d = pxDefault[k] || 120;
                 const normalized = Number.isFinite(raw) ? Math.round(raw) : d;
@@ -3550,6 +3704,18 @@
                 const validCalendarHourSlotHeightModes = new Set(['normal', 'high', 'higher', 'ultra']);
                 const calendarHourSlotHeightMode = String(this.data.calendarHourSlotHeightMode || '').trim();
                 this.data.calendarHourSlotHeightMode = validCalendarHourSlotHeightModes.has(calendarHourSlotHeightMode) ? calendarHourSlotHeightMode : 'normal';
+            }
+            {
+                const validQuickAddModes = new Set(['current', 'nextHour', 'custom']);
+                const quickAddMode = String(this.data.calendarQuickAddScheduleTimeMode || '').trim();
+                this.data.calendarQuickAddScheduleTimeMode = validQuickAddModes.has(quickAddMode) ? quickAddMode : 'current';
+                const rawTime = String(this.data.calendarQuickAddScheduleCustomTime || '').trim();
+                const m = rawTime.match(/^(\d{1,2}):(\d{2})$/);
+                const hh = m ? Number(m[1]) : NaN;
+                const mm = m ? Number(m[2]) : NaN;
+                this.data.calendarQuickAddScheduleCustomTime = (Number.isInteger(hh) && Number.isInteger(mm) && hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59)
+                    ? `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
+                    : '09:00';
             }
             {
                 const monthMinVisibleEvents = Number(this.data.calendarMonthMinVisibleEvents);
@@ -3840,8 +4006,10 @@
 
         // 便捷方法：更新列宽度
         async updateColumnWidth(column, width) {
+            const colKey = String(column || '').trim();
+            if (__tmIsFixedDateColumn(colKey)) return;
             if (typeof width === 'number' && width >= 10 && width <= 800) {
-                this.data.columnWidths[column] = width;
+                this.data.columnWidths[colKey] = width;
                 await this.save();
             }
         },
@@ -4252,6 +4420,7 @@
                     statusOptions,
                     defaultStatusId: defaultUndoneStatusId,
                 },
+                { value: 'startDate', label: '开始日期', type: 'datetime' },
                 { value: 'completionTime', label: '截止日期', type: 'datetime' },
                 { value: 'taskCompleteAt', label: '完成时间', type: 'datetime' },
                 { value: 'created', label: '创建时间', type: 'datetime' },

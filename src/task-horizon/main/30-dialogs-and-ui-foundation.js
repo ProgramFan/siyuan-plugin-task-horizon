@@ -2412,9 +2412,18 @@ if (mode === 'checklist') {
     function __tmBindDocTabWheelScroll(modalEl) {
         const modal = modalEl instanceof Element ? modalEl : state.modal;
         const pane = modal?.querySelector?.('.tm-doc-tabs-scroll');
+        const tabs = pane?.closest?.('.tm-doc-tabs');
+        if (tabs?.classList?.contains?.('tm-doc-tabs--multirow') && !tabs.classList.contains('tm-doc-tabs--collapsed')) {
+            __tmBindVerticalWheelIsolation(pane, {
+                boundKey: '__tmDocTabVerticalWheelBound',
+                handlerKey: '__tmDocTabVerticalWheelHandler',
+            });
+            return;
+        }
         __tmBindHorizontalWheelScroll(pane, {
             boundKey: '__tmDocTabWheelBound',
             handlerKey: '__tmDocTabWheelHandler',
+            consumeAlways: true,
         });
     }
 
@@ -2439,18 +2448,62 @@ if (mode === 'checklist') {
         const onWheel = (event) => {
             if (!(event instanceof WheelEvent) || event.ctrlKey) return;
             const maxLeft = Math.max(0, (Number(scroller.scrollWidth) || 0) - (Number(scroller.clientWidth) || 0));
-            if (maxLeft <= 1) return;
+            if (maxLeft <= 1) {
+                if (opts.consumeAlways) {
+                    try { event.stopPropagation(); } catch (e) {}
+                    event.preventDefault();
+                }
+                return;
+            }
             const deltaX = Number(event.deltaX) || 0;
             const deltaY = Number(event.deltaY) || 0;
             const primaryDelta = Math.abs(deltaX) > Math.abs(deltaY) ? deltaX : deltaY;
-            if (!primaryDelta) return;
+            if (!primaryDelta) {
+                if (opts.consumeAlways) {
+                    try { event.stopPropagation(); } catch (e) {}
+                    event.preventDefault();
+                }
+                return;
+            }
             const prevLeft = Number(scroller.scrollLeft) || 0;
             const nextLeft = Math.max(0, Math.min(maxLeft, prevLeft + primaryDelta));
-            if (Math.abs(nextLeft - prevLeft) < 0.5) return;
+            if (Math.abs(nextLeft - prevLeft) < 0.5) {
+                if (opts.consumeAlways) {
+                    try { event.stopPropagation(); } catch (e) {}
+                    event.preventDefault();
+                }
+                return;
+            }
             scroller.scrollLeft = nextLeft;
             if (typeof opts.onAfterScroll === 'function') {
                 try { opts.onAfterScroll(event, { prevLeft, nextLeft, scroller }); } catch (e) {}
             }
+            try { event.stopPropagation(); } catch (e) {}
+            event.preventDefault();
+        };
+        scroller.addEventListener('wheel', onWheel, { passive: false });
+        scroller[boundKey] = true;
+        scroller[handlerKey] = onWheel;
+    }
+
+    function __tmBindVerticalWheelIsolation(scroller, options = {}) {
+        if (!(scroller instanceof HTMLElement)) return;
+        const opts = (options && typeof options === 'object') ? options : {};
+        const boundKey = String(opts.boundKey || '__tmVerticalWheelBound').trim() || '__tmVerticalWheelBound';
+        const handlerKey = String(opts.handlerKey || '__tmVerticalWheelHandler').trim() || '__tmVerticalWheelHandler';
+        if (scroller[boundKey]) return;
+        const onWheel = (event) => {
+            if (!(event instanceof WheelEvent) || event.ctrlKey) return;
+            const maxTop = Math.max(0, (Number(scroller.scrollHeight) || 0) - (Number(scroller.clientHeight) || 0));
+            if (maxTop > 1) {
+                const deltaX = Number(event.deltaX) || 0;
+                const deltaY = Number(event.deltaY) || 0;
+                const primaryDelta = Math.abs(deltaY) >= Math.abs(deltaX) ? deltaY : deltaX;
+                const prevTop = Number(scroller.scrollTop) || 0;
+                const nextTop = Math.max(0, Math.min(maxTop, prevTop + primaryDelta));
+                if (Math.abs(nextTop - prevTop) >= 0.5) scroller.scrollTop = nextTop;
+            }
+            try { event.stopPropagation(); } catch (e) {}
             event.preventDefault();
         };
         scroller.addEventListener('wheel', onWheel, { passive: false });
@@ -2464,6 +2517,7 @@ if (mode === 'checklist') {
         if (!(pane instanceof HTMLElement)) return;
         const sync = () => {
             try { state.docTabsScrollLeft = Number(pane.scrollLeft) || 0; } catch (e) {}
+            try { state.docTabsScrollTop = Number(pane.scrollTop) || 0; } catch (e) {}
         };
         if (!pane.__tmDocTabScrollBound) {
             pane.addEventListener('scroll', sync, { passive: true });
@@ -2473,23 +2527,106 @@ if (mode === 'checklist') {
         sync();
     }
 
-    function __tmRestoreDocTabScroll(modalEl, left) {
+    function __tmRestoreDocTabScroll(modalEl, left, top) {
         const modal = modalEl instanceof Element ? modalEl : state.modal;
         const pane = modal?.querySelector?.('.tm-doc-tabs-scroll');
         if (!(pane instanceof HTMLElement)) return;
         const desiredLeft = Math.max(0, Number(left) || 0);
+        const desiredTop = Math.max(0, Number(top) || 0);
         const apply = () => {
             try {
                 const maxLeft = Math.max(0, (Number(pane.scrollWidth) || 0) - (Number(pane.clientWidth) || 0));
                 const nextLeft = Math.min(desiredLeft, maxLeft);
+                const maxTop = Math.max(0, (Number(pane.scrollHeight) || 0) - (Number(pane.clientHeight) || 0));
+                const nextTop = Math.min(desiredTop, maxTop);
                 pane.scrollLeft = nextLeft;
+                pane.scrollTop = nextTop;
                 state.docTabsScrollLeft = nextLeft;
+                state.docTabsScrollTop = nextTop;
             } catch (e) {}
         };
         apply();
         try { requestAnimationFrame(apply); } catch (e) {}
         try { requestAnimationFrame(() => requestAnimationFrame(apply)); } catch (e) {}
         try { setTimeout(apply, 0); } catch (e) {}
+    }
+
+    function __tmMeasureDocTabsSingleLineOverflow(pane) {
+        if (!(pane instanceof HTMLElement)) return false;
+        const tabs = Array.from(pane.querySelectorAll('.tm-doc-tab')).filter((el) => el instanceof HTMLElement);
+        if (tabs.length <= 1) return false;
+        let total = 0;
+        try {
+            const cs = window.getComputedStyle(pane);
+            const gap = Number.parseFloat(cs.columnGap || cs.gap || '0') || 0;
+            tabs.forEach((el, idx) => {
+                total += Number(el.offsetWidth) || 0;
+                if (idx > 0) total += gap;
+            });
+        } catch (e) {
+            total = Number(pane.scrollWidth) || 0;
+        }
+        return total > (Number(pane.clientWidth) || 0) + 2;
+    }
+
+    function __tmSyncDocTabsOverflowToggle(modalEl) {
+        const modal = modalEl instanceof Element ? modalEl : state.modal;
+        const tabs = modal?.querySelector?.('.tm-doc-tabs');
+        const pane = tabs?.querySelector?.('.tm-doc-tabs-scroll');
+        if (!(tabs instanceof HTMLElement) || !(pane instanceof HTMLElement)) return;
+        if (!tabs.classList.contains('tm-doc-tabs--multirow')) {
+            tabs.classList.remove('tm-doc-tabs--overflowing');
+            return;
+        }
+        const overflowing = __tmMeasureDocTabsSingleLineOverflow(pane);
+        tabs.classList.toggle('tm-doc-tabs--overflowing', overflowing);
+        if (!overflowing) {
+            try { pane.scrollTop = 0; } catch (e) {}
+            try { state.docTabsScrollTop = 0; } catch (e) {}
+        }
+    }
+
+    function __tmBindDocTabsOverflowToggle(modalEl) {
+        const modal = modalEl instanceof Element ? modalEl : state.modal;
+        const tabs = modal?.querySelector?.('.tm-doc-tabs');
+        const pane = tabs?.querySelector?.('.tm-doc-tabs-scroll');
+        if (!(tabs instanceof HTMLElement) || !(pane instanceof HTMLElement)) return;
+        const sync = () => {
+            try { __tmSyncDocTabsOverflowToggle(modal); } catch (e) {}
+        };
+        sync();
+        try { requestAnimationFrame(sync); } catch (e) {}
+        try { setTimeout(sync, 0); } catch (e) {}
+        if (!tabs.__tmDocTabsOverflowResizeObserver && typeof ResizeObserver === 'function') {
+            try {
+                const ro = new ResizeObserver(sync);
+                ro.observe(tabs);
+                ro.observe(pane);
+                tabs.__tmDocTabsOverflowResizeObserver = ro;
+            } catch (e) {}
+        }
+    }
+
+    function __tmEnsureActiveDocTabVisible(modalEl) {
+        const modal = modalEl instanceof Element ? modalEl : state.modal;
+        const pane = modal?.querySelector?.('.tm-doc-tabs-scroll');
+        const active = pane?.querySelector?.('.tm-doc-tab.active');
+        if (!(pane instanceof HTMLElement) || !(active instanceof HTMLElement)) return;
+        const apply = () => {
+            try {
+                const paneRect = pane.getBoundingClientRect();
+                const activeRect = active.getBoundingClientRect();
+                const outside = activeRect.left < paneRect.left
+                    || activeRect.right > paneRect.right
+                    || activeRect.top < paneRect.top
+                    || activeRect.bottom > paneRect.bottom;
+                if (outside) active.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+                state.docTabsScrollLeft = Number(pane.scrollLeft) || 0;
+                state.docTabsScrollTop = Number(pane.scrollTop) || 0;
+            } catch (e) {}
+        };
+        try { requestAnimationFrame(apply); } catch (e) {}
+        try { requestAnimationFrame(() => requestAnimationFrame(apply)); } catch (e) {}
     }
 
     function __tmApplyPopupOpenAnimation(rootEl, surfaceEl, options = {}) {
@@ -3570,6 +3707,16 @@ if (mode === 'checklist') {
             || blockElement?.textContent
             || ''
         );
+        const docId = String(
+            ext.docId
+            || task?.root_id
+            || task?.docId
+            || blockLike?.root_id
+            || blockLike?.docId
+            || blockRow?.root_id
+            || __tmGetDocIdFromProtyle(blockElement?.closest?.('.protyle') || null)
+            || ''
+        ).trim();
         const dateDraft = (() => {
             const explicitStartKey = __tmNormalizeDateOnly(ext.taskDateStartKey || ext.startKey || '');
             const explicitEndExKey = __tmNormalizeDateOnly(ext.taskDateEndExclusiveKey || ext.endExclusiveKey || '');
@@ -3587,7 +3734,9 @@ if (mode === 'checklist') {
             id: String(ext.id || ext.scheduleId || '').trim(),
             blockId: rawId,
             taskId: String(taskId || '').trim(),
+            docId,
             title: explicitTitle || taskTitle || blockTitle || '日程',
+            duration: String(ext.duration || task?.duration || blockLike?.duration || '').trim(),
             taskStartDate: __tmNormalizeDateOnly((task || blockLike || {})?.startDate || ''),
             taskCompletionTime: __tmNormalizeDateOnly((task || blockLike || {})?.completionTime || ''),
             taskDateStartKey: String(dateDraft.taskDateStartKey || '').trim(),
@@ -3628,6 +3777,160 @@ if (mode === 'checklist') {
         }
         hint('⚠ 当前日历模块不支持从块打开日程编辑', 'warning');
         return false;
+    }
+
+    function __tmNormalizeQuickAddScheduleTimeMode(value) {
+        const mode = String(value || '').trim();
+        return (mode === 'nextHour' || mode === 'custom') ? mode : 'current';
+    }
+
+    function __tmNormalizeQuickAddScheduleCustomTime(value, fallback = '09:00') {
+        const raw = String(value || '').trim();
+        const safeFallback = String(fallback || '').trim() || '09:00';
+        const m = raw.match(/^(\d{1,2}):(\d{2})$/);
+        if (!m) return safeFallback;
+        const hh = Number(m[1]);
+        const mm = Number(m[2]);
+        if (!Number.isInteger(hh) || !Number.isInteger(mm) || hh < 0 || hh > 23 || mm < 0 || mm > 59) return safeFallback;
+        return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+    }
+
+    function __tmResolveQuickAddScheduleStart() {
+        const mode = __tmNormalizeQuickAddScheduleTimeMode(SettingsStore?.data?.calendarQuickAddScheduleTimeMode);
+        const start = new Date();
+        if (mode === 'nextHour') {
+            start.setHours(start.getHours() + 1, 0, 0, 0);
+            return start;
+        }
+        if (mode === 'custom') {
+            const time = __tmNormalizeQuickAddScheduleCustomTime(SettingsStore?.data?.calendarQuickAddScheduleCustomTime);
+            const parts = time.split(':').map((item) => Number(item));
+            start.setHours(parts[0] || 0, parts[1] || 0, 0, 0);
+            return start;
+        }
+        start.setSeconds(0, 0);
+        return start;
+    }
+
+    function __tmResolveQuickAddScheduleDurationMin(draft) {
+        let minutes = null;
+        try {
+            if (typeof __tmParseDurationMinutes === 'function') {
+                minutes = __tmParseDurationMinutes(draft?.duration);
+            }
+        } catch (e) {
+            minutes = null;
+        }
+        const num = Number(minutes);
+        return (Number.isFinite(num) && num > 0) ? Math.max(1, Math.round(num)) : 60;
+    }
+
+    async function __tmResolveCalendarIdForScheduleDoc(docId) {
+        const did = String(docId || '').trim();
+        const fallback = String(SettingsStore?.data?.calendarDefaultCalendarId || 'default').trim() || 'default';
+        if (!did) return fallback;
+        let map = null;
+        try {
+            if (typeof window.tmCalendarWarmDocsToGroupCache === 'function') {
+                await window.tmCalendarWarmDocsToGroupCache();
+            }
+        } catch (e) {}
+        try {
+            if (window.__tmCalendarDocsToGroupCache?.map instanceof Map) {
+                map = window.__tmCalendarDocsToGroupCache.map;
+            }
+        } catch (e) {}
+        if (!(map instanceof Map)) {
+            try {
+                if (typeof __tmGetCalendarDocsToGroupMapSync === 'function') map = __tmGetCalendarDocsToGroupMapSync();
+            } catch (e) {}
+        }
+        const groupId = String(map?.get?.(did) || '').trim();
+        return groupId ? `group:${groupId}` : fallback;
+    }
+
+    function __tmResolveScheduleColorForDoc(docId) {
+        const did = String(docId || '').trim();
+        if (!did || SettingsStore?.data?.calendarScheduleFollowDocColor !== true) return '';
+        try {
+            const color = __tmGetDocColorHex(did, __tmIsDarkMode());
+            if (String(color || '').trim()) return String(color || '').trim();
+        } catch (e) {}
+        try {
+            const color = window.tmGetDocColorHex?.(did, { isDark: __tmIsDarkMode() });
+            if (String(color || '').trim()) return String(color || '').trim();
+        } catch (e) {}
+        return '';
+    }
+
+    function __tmExtractGroupIdFromScheduleCalendarId(calendarId) {
+        const cid = String(calendarId || '').trim();
+        return cid.startsWith('group:') ? cid.slice('group:'.length).trim() : '';
+    }
+
+    async function __tmTryAddOtherBlockToScheduleGroup(blockId, taskId, calendarId) {
+        const bid = String(blockId || '').trim();
+        if (!bid || String(taskId || '').trim()) return null;
+        const groupId = __tmExtractGroupIdFromScheduleCalendarId(calendarId);
+        if (!groupId) return null;
+        const addOtherBlock = window.tmAutoAddOtherBlocksToCurrentGroup;
+        if (typeof addOtherBlock !== 'function') return null;
+        const currentGroupId = String(SettingsStore?.data?.currentGroupId || 'all').trim() || 'all';
+        try {
+            return await addOtherBlock([bid], {
+                groupId,
+                silent: true,
+                forceRefresh: currentGroupId === groupId,
+            });
+        } catch (e) {
+            return null;
+        }
+    }
+
+    async function __tmAddBlockToTodaySchedule(blockId, blockElement, extra = {}) {
+        const calendarApi = globalThis.__tmCalendar;
+        if (!calendarApi || typeof calendarApi.addTaskSchedule !== 'function') {
+            hint('⚠ 日历模块尚未加载完成', 'warning');
+            return false;
+        }
+        const draft = await __tmResolveScheduleDraftForBlock(blockId, blockElement, extra);
+        if (!draft) {
+            hint('⚠ 未找到可添加的块', 'warning');
+            return false;
+        }
+        const taskId = String(draft.taskId || '').trim();
+        const linkedBlockId = String(draft.blockId || blockId || '').trim();
+        if (!taskId && !linkedBlockId) {
+            hint('⚠ 未找到可添加的块', 'warning');
+            return false;
+        }
+        const start = __tmResolveQuickAddScheduleStart();
+        const durationMin = __tmResolveQuickAddScheduleDurationMin(draft);
+        const end = new Date(start.getTime() + durationMin * 60000);
+        const docId = String(draft.docId || '').trim();
+        const calendarId = String(draft.calendarId || '').trim() || await __tmResolveCalendarIdForScheduleDoc(docId);
+        const color = __tmResolveScheduleColorForDoc(docId);
+        try {
+            await calendarApi.addTaskSchedule({
+                taskId,
+                blockId: linkedBlockId,
+                docId,
+                title: String(draft.title || '').trim() || '日程',
+                start,
+                end,
+                calendarId,
+                durationMin,
+                allDay: false,
+                color,
+                preferCalendarColor: !color,
+            });
+            await __tmTryAddOtherBlockToScheduleGroup(linkedBlockId, taskId, calendarId);
+            hint('✅ 已添加至今天日程', 'success');
+            return true;
+        } catch (e) {
+            hint(`❌ 添加至今天日程失败：${String(e?.message || e || '')}`, 'error');
+            return false;
+        }
     }
 
     function __tmCreateNativeMenuItem(label, onClick, extraClass = '') {
@@ -7034,6 +7337,20 @@ if (mode === 'checklist') {
     window.tmSwitchDoc = async function(docId) {
         if (Number(state.suppressDocTabClickUntil || 0) > Date.now()) return;
         const nextDocId = String(docId || 'all').trim() || 'all';
+        const shouldCollapseDocTabsAfterSwitch = (() => {
+            try {
+                const hostInfo = globalThis.__tmRuntimeHost?.getInfo?.() || null;
+                return !!(__tmIsMobileDevice()
+                    || (hostInfo?.isDockHost ?? __tmIsDockHost())
+                    || (hostInfo?.hostUsesMobileUI ?? __tmHostUsesMobileUI()));
+            } catch (e) {
+                return false;
+            }
+        })();
+        if (shouldCollapseDocTabsAfterSwitch && state.docTabsCollapsed === false) {
+            state.docTabsCollapsed = true;
+            try { Storage.set('tm_doc_tabs_collapsed', true); } catch (e) {}
+        }
         state.activeDocId = (__tmIsOtherBlockTabId(nextDocId) && !(Array.isArray(state.otherBlocks) && state.otherBlocks.length))
             ? 'all'
             : nextDocId;
@@ -10950,6 +11267,14 @@ if (mode === 'checklist') {
             } catch (e) {}
             return;
         }
+        render();
+    };
+
+    window.tmToggleDocTabsCollapsed = function(ev) {
+        try { ev?.stopPropagation?.(); } catch (e) {}
+        try { ev?.preventDefault?.(); } catch (e) {}
+        state.docTabsCollapsed = !state.docTabsCollapsed;
+        try { Storage.set('tm_doc_tabs_collapsed', !!state.docTabsCollapsed); } catch (e) {}
         render();
     };
 

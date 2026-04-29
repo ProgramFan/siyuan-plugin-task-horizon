@@ -502,6 +502,7 @@
             multiSelectedTaskIds: Array.isArray(state.multiSelectedTaskIds) ? state.multiSelectedTaskIds.slice() : [],
             multiBulkEditFieldKey: String(state.multiBulkEditFieldKey || '').trim(),
             docTabsHidden: !!state.docTabsHidden,
+            docTabsCollapsed: !!state.docTabsCollapsed,
             homepageOpen: !!state.homepageOpen,
             aiSidebarOpen: !!state.aiSidebarOpen,
             aiMobilePanelOpen: !!state.aiMobilePanelOpen,
@@ -536,6 +537,7 @@
             : [];
         state.multiBulkEditFieldKey = String(saved.multiBulkEditFieldKey || '').trim();
         state.docTabsHidden = !!saved.docTabsHidden;
+        state.docTabsCollapsed = saved.docTabsCollapsed === false ? false : true;
         state.homepageOpen = !!saved.homepageOpen;
         state.aiSidebarOpen = !!saved.aiSidebarOpen;
         state.aiMobilePanelOpen = !!saved.aiMobilePanelOpen;

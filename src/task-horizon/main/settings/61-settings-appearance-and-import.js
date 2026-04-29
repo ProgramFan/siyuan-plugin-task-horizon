@@ -86,7 +86,12 @@
         // Visible columns
         currentOrder.forEach((key, index) => {
             const colDef = availableCols.find(c => c.key === key) || { key, label: key };
-            const width = widths[key] || defaultWidths[key] || 120;
+            const isFixedDateColumn = __tmIsFixedDateColumn(key);
+            const width = isFixedDateColumn ? __tmGetFixedDateColumnWidth(key) : (widths[key] || defaultWidths[key] || 120);
+            const widthControlHtml = isFixedDateColumn
+                ? `<span style="flex:1;margin:0 8px;font-size:12px;color:var(--tm-secondary-text);">按日期内容固定</span>`
+                : `<input type="range" min="10" max="800" value="${width}" style="flex: 1; margin: 0 8px;" onchange="updateColumnWidth('${key}', parseInt(this.value))" title="宽度调整">`;
+            const widthText = isFixedDateColumn ? `${width}px 固定` : `${width}px`;
 
             html += `
                 <div class="tm-column-item" style="display: flex; align-items: center; gap: 8px; padding: 6px; background: var(--tm-input-bg); margin-bottom: 4px; border-radius: 4px;">
@@ -96,8 +101,8 @@
                         <button class="tm-btn" onclick="moveColumn('${key}', -1)" ${index === 0 ? 'disabled' : ''} style="padding: 2px 6px; font-size: 10px;">↑</button>
                         <button class="tm-btn" onclick="moveColumn('${key}', 1)" ${index === currentOrder.length - 1 ? 'disabled' : ''} style="padding: 2px 6px; font-size: 10px;">↓</button>
                     </div>
-                    <input type="range" min="10" max="800" value="${width}" style="flex: 1; margin: 0 8px;" onchange="updateColumnWidth('${key}', parseInt(this.value))" title="宽度调整">
-                    <span style="font-size: 12px; width: 52px; text-align: right;">${width}px</span>
+                    ${widthControlHtml}
+                    <span style="font-size: 12px; width: 70px; text-align: right;">${widthText}</span>
                 </div>
             `;
         });

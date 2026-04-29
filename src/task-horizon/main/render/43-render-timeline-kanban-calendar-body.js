@@ -9,8 +9,8 @@
             const leftWidth0 = Number(SettingsStore.data.timelineLeftWidth);
             const timelineContentWidth0 = Number(SettingsStore.data.timelineContentWidth);
             const timelineContentWidth = Number.isFinite(timelineContentWidth0) ? Math.max(10, Math.min(800, Math.round(timelineContentWidth0))) : (Number(widths.content) || 360);
-            const timelineStartW = Math.max(10, Math.min(240, Math.round(Number(widths.startDate) || 90)));
-            const timelineEndW = Math.max(10, Math.min(360, Math.round(Number(widths.completionTime) || 170)));
+            const timelineStartW = __tmGetFixedDateColumnWidth('startDate');
+            const timelineEndW = __tmGetFixedDateColumnWidth('completionTime');
             const leftTableWidth = Math.round(timelineContentWidth + timelineStartW + timelineEndW + 2);
             const computedAuto = leftTableWidth;
             const leftWidth = (Number.isFinite(leftWidth0) && leftWidth0 > 0)

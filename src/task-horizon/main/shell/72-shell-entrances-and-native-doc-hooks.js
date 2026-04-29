@@ -857,16 +857,16 @@
             if (
                 scheduleBlockIds.length === 1
                 && globalThis.__tmCalendar
-                && (typeof globalThis.__tmCalendar.openScheduleEditor === 'function' || typeof globalThis.__tmCalendar.openScheduleEditorByTaskId === 'function')
+                && typeof globalThis.__tmCalendar.addTaskSchedule === 'function'
             ) {
                 const scheduleBlockId = String(scheduleBlockIds[0] || '').trim();
                 const scheduleBlockElement = rawBlockElements.find((item) => __tmResolveAnyBlockIdFromElement(item) === scheduleBlockId) || rawBlockElements[0] || null;
                 if (scheduleBlockId) {
                     menu.addItem({
                         icon: 'iconTaskHorizon',
-                        label: '编辑日程',
+                        label: '添加至今天日程',
                         click: async () => {
-                            await __tmOpenScheduleEditorForBlock(scheduleBlockId, scheduleBlockElement);
+                            await __tmAddBlockToTodaySchedule(scheduleBlockId, scheduleBlockElement);
                         }
                     });
                 }
@@ -955,8 +955,9 @@
                 if (menuItems.querySelector('.tm-block-schedule-menu-item')) return;
                 const blockCtx = __tmGetRecentBlockMenuContext();
                 if (!blockCtx?.blockId) return;
-                const scheduleItem = __tmCreateNativeMenuItem('编辑日程', async () => {
-                    await __tmOpenScheduleEditorForBlock(blockCtx.blockId, blockCtx.blockElement);
+                if (!globalThis.__tmCalendar || typeof globalThis.__tmCalendar.addTaskSchedule !== 'function') return;
+                const scheduleItem = __tmCreateNativeMenuItem('添加至今天日程', async () => {
+                    await __tmAddBlockToTodaySchedule(blockCtx.blockId, blockCtx.blockElement);
                 }, 'tm-block-schedule-menu-item');
                 __tmInsertMenuItem(menuItems, scheduleItem);
                 __tmLastRightClickedBlockAtMs = 0;

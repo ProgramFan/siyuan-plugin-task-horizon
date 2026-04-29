@@ -92,30 +92,43 @@
         const defaultWidths = __tmGetColumnWidthDefaults();
         const order = Array.isArray(columnOrder) ? columnOrder.filter((col) => Object.prototype.hasOwnProperty.call(defaultWidths, col)) : defaultOrder;
         const baseWidths = {};
+        let fixedTotal = 0;
         let total = 0;
         order.forEach((col) => {
+            const isFixedDate = __tmIsFixedDateColumn(col);
             const raw = Number(widthMap?.[col]);
-            const width = Number.isFinite(raw) ? Math.max(10, Math.min(800, Math.round(raw))) : (defaultWidths[col] || 120);
+            const width = isFixedDate
+                ? __tmGetFixedDateColumnWidth(col)
+                : (Number.isFinite(raw) ? Math.max(10, Math.min(800, Math.round(raw))) : (defaultWidths[col] || 120));
             baseWidths[col] = width;
+            if (isFixedDate) fixedTotal += width;
             total += width;
         });
         const safeTotal = Math.max(1, total);
         const usableWidthRaw = Number(availableWidth);
         const usableWidth = Number.isFinite(usableWidthRaw) ? Math.max(0, Math.round(usableWidthRaw)) : 0;
-        const shouldStretch = usableWidth > safeTotal;
-        const scale = shouldStretch ? (usableWidth / safeTotal) : 1;
+        const lastFlexibleIndex = order.reduce((last, col, index) => __tmIsFixedDateColumn(col) ? last : index, -1);
+        const shouldStretch = usableWidth > safeTotal && lastFlexibleIndex >= 0;
+        const flexibleTotal = Math.max(1, safeTotal - fixedTotal);
+        const stretchableWidth = Math.max(0, usableWidth - fixedTotal);
+        const scale = shouldStretch ? (stretchableWidth / flexibleTotal) : 1;
         const widths = {};
         let resolvedTotal = 0;
+        let resolvedFlexibleTotal = 0;
         order.forEach((col, index) => {
             const base = baseWidths[col] || defaultWidths[col] || 120;
-            let width = shouldStretch ? Math.max(base, Math.round(base * scale)) : base;
-            if (shouldStretch && index === order.length - 1) {
-                width = Math.max(base, usableWidth - resolvedTotal);
+            let width = base;
+            if (shouldStretch && !__tmIsFixedDateColumn(col)) {
+                width = Math.max(base, Math.round(base * scale));
+                if (index === lastFlexibleIndex) {
+                    width = Math.max(base, stretchableWidth - resolvedFlexibleTotal);
+                }
+                resolvedFlexibleTotal += width;
             }
             widths[col] = width;
             resolvedTotal += width;
         });
-        const finalTableWidth = shouldStretch ? Math.max(usableWidth, resolvedTotal) : safeTotal;
+        const finalTableWidth = resolvedTotal;
         return {
             order,
             baseWidths,

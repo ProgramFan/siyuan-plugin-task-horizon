@@ -3963,6 +3963,50 @@ hint(`❌ 操作失败: ${e.message}`, 'error');
                 setTimeout(() => { try { timer?.refreshUI?.(); } catch (e) {} }, 150);
             }
         };
+        const createPriorityBlock = () => {
+            const wrap = document.createElement('div');
+            wrap.className = 'tm-task-context-priority';
+            const title = document.createElement('div');
+            title.className = 'tm-task-context-priority__title';
+            title.textContent = '优先级';
+            wrap.appendChild(title);
+            const row = document.createElement('div');
+            row.className = 'tm-task-context-priority__row';
+            const currentKey = String(__tmGetPriorityJiraInfo(task?.priority || '')?.key || 'none').trim() || 'none';
+            [
+                { key: 'high', value: 'high' },
+                { key: 'medium', value: 'medium' },
+                { key: 'low', value: 'low' },
+                { key: 'none', value: '' },
+            ].forEach((opt) => {
+                const info = __tmGetPriorityJiraInfo(opt.value);
+                const key = String(opt.key || info?.key || 'none').trim() || 'none';
+                const color = __tmGetPriorityAccentColor(key) || 'var(--tm-secondary-text)';
+                const active = key === currentKey;
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = `tm-task-context-priority__btn${active ? ' is-active' : ''}`;
+                btn.style.setProperty('--tm-context-priority-color', color);
+                btn.setAttribute('aria-label', `设置优先级为${info?.label || '无'}`);
+                btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+                btn.title = info?.label || '无';
+                btn.innerHTML = __tmRenderPriorityJira(opt.value, false);
+                btn.onclick = async (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    btn.disabled = true;
+                    const ok = await window.tmSetTaskPriority(taskId, opt.value, {
+                        source: 'context-menu-priority',
+                    });
+                    if (ok) menu.remove();
+                    else btn.disabled = false;
+                };
+                row.appendChild(btn);
+            });
+            wrap.appendChild(row);
+            return wrap;
+        };
+        let hasContextTopBlock = false;
         if (tomatoEnabled && timer && typeof timer === 'object') {
             const durations = (() => {
                 const list = timer?.getDurations?.();
@@ -4014,11 +4058,21 @@ hint(`❌ 操作失败: ${e.message}`, 'error');
             btnRow.appendChild(sw);
             timerWrap.appendChild(btnRow);
             menu.appendChild(timerWrap);
+            hasContextTopBlock = true;
+        }
 
+        if (task) {
+            menu.appendChild(createPriorityBlock());
+            hasContextTopBlock = true;
+        }
+
+        if (hasContextTopBlock) {
             const hrTimer = document.createElement('hr');
             hrTimer.style.cssText = 'margin: 4px 0; border: none; border-top: 1px solid var(--b3-theme-surface-light);';
             menu.appendChild(hrTimer);
+        }
 
+        if (tomatoEnabled && timer && typeof timer === 'object') {
             if (state.timerFocusTaskId) {
                 menu.appendChild(createItem(__tmRenderContextMenuLabel('circle-dot', '取消聚焦'), () => {
                     state.timerFocusTaskId = '';

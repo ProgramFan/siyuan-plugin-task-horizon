@@ -76,10 +76,14 @@ return;
         let savedHomepageScrollTop = 0;
         let savedHomepageScrollLeft = 0;
         let savedDocTabsScrollLeft = Number(state.docTabsScrollLeft) || 0;
+        let savedDocTabsScrollTop = Number(state.docTabsScrollTop) || 0;
         if (prevModalSnapshot) {
             prevModalEl = prevModalSnapshot;
             const docTabsPane = prevModalSnapshot.querySelector('.tm-doc-tabs-scroll');
-            if (docTabsPane) savedDocTabsScrollLeft = Number(docTabsPane.scrollLeft) || 0;
+            if (docTabsPane) {
+                savedDocTabsScrollLeft = Number(docTabsPane.scrollLeft) || 0;
+                savedDocTabsScrollTop = Number(docTabsPane.scrollTop) || 0;
+            }
             const timelineLeftBody = prevModalSnapshot.querySelector('#tmTimelineLeftBody');
             const ganttBody = prevModalSnapshot.querySelector('#tmGanttBody');
             const timelineScrollHost = __tmGetTimelineGlobalScrollHost(prevModalSnapshot);
@@ -240,6 +244,14 @@ return;
         const useCompactTopbarBrand = __tmShouldUseCompactTopbarBrand();
         const managerIconTooltip = '全部页签，右击或长按隐藏/展开页签栏';
         const isAnimatedDockHost = !!(isDockHost && !isRuntimeMobile);
+        const docTabsCanMultirow = true;
+        const docTabsCollapsed = !docTabsCanMultirow || state.docTabsCollapsed !== false;
+        const docTabsClass = [
+            state.docTabsHidden ? 'tm-doc-tabs--hidden' : '',
+            docTabsCanMultirow ? 'tm-doc-tabs--multirow' : '',
+            docTabsCollapsed ? 'tm-doc-tabs--collapsed' : 'tm-doc-tabs--expanded',
+        ].filter(Boolean).join(' ');
+        const docTabsToggleTitle = docTabsCollapsed ? '展开多行文档页签' : '折叠为单行文档页签';
         const isSplitPane = false; // 使用CSS容器查询处理分屏模式
         const isLandscape = !!(isMobile && (() => { try { return !!window.matchMedia?.('(orientation: landscape)')?.matches; } catch (e) { return false; } })());
         const isDesktopNarrow = !!(!isMobile && (() => { try { return !!window.matchMedia?.('(max-width: 768px)')?.matches; } catch (e) { return false; } })());
@@ -660,12 +672,12 @@ return;
                         }
                     </style>
 
-                <div class="tm-doc-tabs ${state.docTabsHidden ? 'tm-doc-tabs--hidden' : ''}"
+                <div class="tm-doc-tabs ${docTabsClass}"
                     ondragenter="tmDocTabDragEnter(event)"
                      ondragleave="tmDocTabDragLeave(event)"
                      ondragover="tmDocTabDragOver(event)"
                      ondrop="tmDocTabDrop(event, '')">
-                    <div class="tm-doc-tabs-scroll" style="display:flex; gap:8px; overflow-x:auto; flex:1; align-items:center; padding: ${isMobile ? '4px 0 4px 0' : '4px 0 4px 0'};" ondragover="tmDocTabDragOver(event)" ondrop="tmDocTabDrop(event, '')">
+                    <div class="tm-doc-tabs-scroll" style="display:flex; gap:8px; flex:1; padding: ${isMobile ? '4px 0 4px 0' : '4px 0 4px 0'};" ondragover="tmDocTabDragOver(event)" ondrop="tmDocTabDrop(event, '')">
                         <div class="tm-doc-tab tm-doc-tab--all ${state.activeDocId === 'all' ? 'active' : ''}" onclick="tmHandleAllDocTabClick(event)" oncontextmenu="tmShowAllDocTabContextMenu(event)"${__tmBuildTooltipAttrs(`${__tmGetViewProfileSourceLabel(__tmGetEffectiveViewProfileForContext('all', currentGroupId).source)}: ${__tmDescribeViewProfile(__tmGetEffectiveViewProfileForContext('all', currentGroupId).profile)} ｜ 右键或长按查看当前分组全部页签`, { side: 'bottom', ariaLabel: false })}>全部</div>
                         ${(() => {
                             const id = String(SettingsStore.data.newTaskDocId || '').trim();
@@ -732,9 +744,17 @@ return;
                             </div>`;
                         }).join('')}
                     </div>
-                    <div style="border-left:1px solid var(--tm-border-color); padding-left:8px; margin-left:8px; display:none; gap:8px;">
-                         ${!isMobile ? `` : ''}
+                    ${docTabsCanMultirow ? `
+                    <div class="tm-doc-tabs-actions">
+                        <button class="tm-doc-tabs-toggle bc-btn bc-btn--sm bc-btn--ghost"
+                            onclick="tmToggleDocTabsCollapsed(event)"
+                            aria-label="${docTabsToggleTitle}"
+                            aria-pressed="${docTabsCollapsed ? 'true' : 'false'}"
+                            ${__tmBuildTooltipAttrs(docTabsToggleTitle, { side: 'bottom', ariaLabel: false })}>
+                            ${__tmRenderLucideIcon(docTabsCollapsed ? 'chevrons-up-down' : 'chevrons-down-up')}
+                        </button>
                     </div>
+                    ` : ''}
                 </div>
 
                 <style>
@@ -763,6 +783,64 @@ return;
                         min-width: 0;
                         width: 100%;
                         justify-content: flex-start;
+                        align-items: center;
+                        flex-wrap: nowrap;
+                        overflow-x: auto;
+                        overflow-y: hidden;
+                        scrollbar-gutter: stable;
+                    }
+                    .tm-doc-tabs--multirow:not(.tm-doc-tabs--collapsed) {
+                        align-items: stretch;
+                        max-height: 132px;
+                        overflow: hidden;
+                    }
+                    .tm-doc-tabs--multirow:not(.tm-doc-tabs--collapsed) .tm-doc-tabs-scroll {
+                        align-content: flex-start;
+                        align-items: flex-start;
+                        flex-wrap: wrap;
+                        max-height: 132px;
+                        overflow-x: hidden;
+                        overflow-y: auto;
+                        padding-right: 4px !important;
+                    }
+                    .tm-doc-tabs--multirow:not(.tm-doc-tabs--collapsed) .tm-doc-tab {
+                        max-width: min(220px, calc(50% - 8px));
+                    }
+                    .tm-doc-tabs-actions {
+                        display: none;
+                        align-items: center;
+                        justify-content: center;
+                        align-self: stretch;
+                        flex: 0 0 40px;
+                        margin-left: 8px;
+                        padding: 4px 8px;
+                        border-left: 1px solid var(--tm-border-color);
+                        box-sizing: border-box;
+                    }
+                    .tm-doc-tabs--overflowing .tm-doc-tabs-actions {
+                        display: flex;
+                    }
+                    .tm-doc-tabs-toggle {
+                        width: 24px;
+                        min-width: 24px;
+                        height: 24px;
+                        min-height: 24px;
+                        padding: 0;
+                        display: inline-flex;
+                        align-items: center;
+                        justify-content: center;
+                    }
+                    .tm-modal.tm-modal--mobile .tm-doc-tabs-actions,
+                    .tm-modal.tm-modal--dock .tm-doc-tabs-actions {
+                        flex-basis: 44px;
+                        padding: 4px 10px;
+                    }
+                    .tm-modal.tm-modal--mobile .tm-doc-tabs-toggle,
+                    .tm-modal.tm-modal--dock .tm-doc-tabs-toggle {
+                        width: 28px;
+                        min-width: 28px;
+                        height: 28px;
+                        min-height: 28px;
                     }
                     .tm-box--with-cal-dock .tm-doc-tabs {
                         flex: 0 0 auto;
@@ -772,7 +850,7 @@ return;
                         z-index: 1;
                     }
                     .tm-doc-tabs.tm-doc-tabs--hidden {
-                        max-height: 0;
+                        max-height: 0 !important;
                         opacity: 0;
                         border-bottom-color: transparent;
                         padding-top: 0;
@@ -799,6 +877,7 @@ return;
                         cursor: pointer;
                         white-space: nowrap;
                         flex: 0 0 auto;
+                        min-width: 0;
                         border: 1px solid var(--tm-border-color);
                         transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease, background 0.12s ease;
                         user-select: none;
@@ -847,6 +926,11 @@ return;
                         gap: 4px;
                         min-width: 0;
                     }
+                    .tm-doc-tab-text > span:last-child {
+                        min-width: 0;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                     }
                     .tm-doc-tab::after {
                         content: '';
                         position: absolute;
@@ -1500,7 +1584,9 @@ return;
         try { __tmBindDocTabWheelScroll(state.modal); } catch (e) {}
         try { __tmBindBottomViewbarWheelScroll(state.modal); } catch (e) {}
         try { __tmBindDocTabScrollMemory(state.modal); } catch (e) {}
-        try { __tmRestoreDocTabScroll(state.modal, savedDocTabsScrollLeft); } catch (e) {}
+        try { __tmBindDocTabsOverflowToggle(state.modal); } catch (e) {}
+        try { __tmRestoreDocTabScroll(state.modal, savedDocTabsScrollLeft, savedDocTabsScrollTop); } catch (e) {}
+        try { __tmEnsureActiveDocTabVisible(state.modal); } catch (e) {}
         try { __tmBindMultiSelectPointerSweep(state.modal); } catch (e) {}
         try {
             if (renderMode === 'whiteboard' && typeof __tmUpdateWhiteboardNavigator === 'function') {

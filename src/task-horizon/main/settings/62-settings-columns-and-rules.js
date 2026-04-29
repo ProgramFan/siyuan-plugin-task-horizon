@@ -1156,6 +1156,7 @@
 
     // 更新列宽度
     window.updateColumnWidth = function(column, width) {
+        if (__tmIsFixedDateColumn(column)) return;
         if (!state.columnWidths) state.columnWidths = {};
         state.columnWidths[column] = width;
         SettingsStore.data.columnWidths = state.columnWidths;

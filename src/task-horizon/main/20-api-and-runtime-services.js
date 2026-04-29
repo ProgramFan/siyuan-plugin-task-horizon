@@ -3152,6 +3152,7 @@
         listAutoLoadMoreHydrateToken: 0,
         calendarDockDate: '',
         docTabsHidden: false,
+        docTabsCollapsed: true,
         topbarManagerIconLongPressTimer: null,
         topbarManagerIconLongPressFired: false,
         topbarManagerIconLongPressMoved: false,
@@ -3161,6 +3162,7 @@
         topbarManagerIconSuppressClickUntil: 0,
         topbarManagerIconIgnoreContextMenuUntil: 0,
         docTabsScrollLeft: 0,
+        docTabsScrollTop: 0,
         settingsSubtabsScrollLeft: 0,
         settingsSectionJump: null,
         statusOptionDraft: null,
@@ -6891,6 +6893,7 @@
             multiSelectedTaskIds: Array.isArray(state.multiSelectedTaskIds) ? state.multiSelectedTaskIds.slice() : [],
             multiBulkEditFieldKey: String(state.multiBulkEditFieldKey || ''),
             docTabsHidden: !!state.docTabsHidden,
+            docTabsCollapsed: !!state.docTabsCollapsed,
             homepageOpen: !!state.homepageOpen,
             aiSidebarOpen: !!state.aiSidebarOpen,
             aiMobilePanelOpen: !!state.aiMobilePanelOpen,
@@ -6922,6 +6925,7 @@
             : [];
         state.multiBulkEditFieldKey = String(snap.multiBulkEditFieldKey || '').trim();
         state.docTabsHidden = !!snap.docTabsHidden;
+        state.docTabsCollapsed = snap.docTabsCollapsed === false ? false : true;
         state.homepageOpen = !!snap.homepageOpen;
         state.aiSidebarOpen = !!snap.aiSidebarOpen;
         state.aiMobilePanelOpen = !!snap.aiMobilePanelOpen;
@@ -11699,6 +11703,40 @@ if (__tmTabEnterAutoRefreshTryCount < 16) {
             const absDeltaY = Math.abs(Number(event.deltaY) || 0);
             const preferHorizontal = absDeltaX > absDeltaY && !event.shiftKey;
             try { event.stopPropagation(); } catch (e) {}
+            const docTabsRoot = event.target?.closest?.('.tm-doc-tabs');
+            const docTabsScroller = docTabsRoot?.querySelector?.('.tm-doc-tabs-scroll');
+            if (docTabsRoot instanceof HTMLElement && docTabsScroller instanceof HTMLElement) {
+                const isExpandedMultirow = docTabsRoot.classList.contains('tm-doc-tabs--multirow')
+                    && !docTabsRoot.classList.contains('tm-doc-tabs--collapsed');
+                if (isExpandedMultirow) {
+                    const maxTabTop = Math.max(0, Number(docTabsScroller.scrollHeight || 0) - Number(docTabsScroller.clientHeight || 0));
+                    if (maxTabTop > 0) {
+                        const currentTabTop = Number(docTabsScroller.scrollTop || 0);
+                        const delta = Math.abs(Number(event.deltaY) || 0) >= Math.abs(Number(event.deltaX) || 0)
+                            ? (Number(event.deltaY) || 0)
+                            : (Number(event.deltaX) || 0);
+                        const nextTabTop = Math.max(0, Math.min(maxTabTop, currentTabTop + delta));
+                        if (Math.abs(nextTabTop - currentTabTop) > 0.5) {
+                            try { docTabsScroller.scrollTop = nextTabTop; } catch (e) {}
+                        }
+                    }
+                    try { event.preventDefault(); } catch (e) {}
+                    return;
+                }
+                const maxTabLeft = Math.max(0, Number(docTabsScroller.scrollWidth || 0) - Number(docTabsScroller.clientWidth || 0));
+                if (maxTabLeft > 0) {
+                    const deltaX = Number(event.deltaX) || 0;
+                    const deltaY = Number(event.deltaY) || 0;
+                    const delta = Math.abs(deltaX) > Math.abs(deltaY) ? deltaX : deltaY;
+                    const currentTabLeft = Number(docTabsScroller.scrollLeft || 0);
+                    const nextTabLeft = Math.max(0, Math.min(maxTabLeft, currentTabLeft + delta));
+                    if (Math.abs(nextTabLeft - currentTabLeft) > 0.5) {
+                        try { docTabsScroller.scrollLeft = nextTabLeft; } catch (e) {}
+                    }
+                }
+                try { event.preventDefault(); } catch (e) {}
+                return;
+            }
             if (preferHorizontal) return;
             const scrollTarget = __tmResolveDockTopbarScrollTarget(modal);
             if (!(scrollTarget instanceof HTMLElement)) {
@@ -14217,8 +14255,8 @@ return true;
         const isGloballyLocked = GlobalLock.isLocked();
         const timelineContentWidth0 = Number(SettingsStore.data.timelineContentWidth);
         const timelineContentWidth = Number.isFinite(timelineContentWidth0) ? Math.max(10, Math.min(800, Math.round(timelineContentWidth0))) : (Number(widths.content) || 360);
-        const timelineStartW = Math.max(10, Math.min(240, Math.round(Number(widths.startDate) || 90)));
-        const timelineEndW = Math.max(10, Math.min(360, Math.round(Number(widths.completionTime) || 170)));
+        const timelineStartW = __tmGetFixedDateColumnWidth('startDate');
+        const timelineEndW = __tmGetFixedDateColumnWidth('completionTime');
         const isDark = __tmIsDarkMode();
         const progressBarColor = isDark
             ? __tmNormalizeHexColor(SettingsStore.data.progressBarColorDark, '#81c784')

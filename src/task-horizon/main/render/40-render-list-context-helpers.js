@@ -13,7 +13,10 @@ function __tmBuildTableHeaderCellHtml(colKey, tableLayout) {
     const labelHtml = key === 'pinned'
         ? __tmRenderInlineIcon('pin')
         : esc(label || key);
-    return `<th data-col="${esc(key)}" title="${esc(label || key)}" oncontextmenu="tmShowColumnHeaderContextMenu(event, '${escapedKey}'); return false;" style="${tableLayout.cellStyle(key, `${align} white-space: nowrap; overflow: hidden;`)}">${labelHtml}<span class="tm-col-resize" onmousedown="startColResize(event, '${escapedKey}')"></span></th>`;
+    const resizeHtml = __tmIsFixedDateColumn(key)
+        ? ''
+        : `<span class="tm-col-resize" onmousedown="startColResize(event, '${escapedKey}')"></span>`;
+    return `<th data-col="${esc(key)}" title="${esc(label || key)}" oncontextmenu="tmShowColumnHeaderContextMenu(event, '${escapedKey}'); return false;" style="${tableLayout.cellStyle(key, `${align} white-space: nowrap; overflow: hidden;`)}">${labelHtml}${resizeHtml}</th>`;
 }
 
 function __tmBuildListRenderContext(options = {}) {

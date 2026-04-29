@@ -775,6 +775,7 @@
     window.startColResize = function(event, colName) {
         event.preventDefault();
         event.stopPropagation();
+        if (__tmIsFixedDateColumn(colName)) return;
         const th = event.target.closest('th');
         const startX = event.clientX;
         const startWidth = th.offsetWidth;
@@ -893,8 +894,8 @@
             th.style.width = `${next}px`;
             th.style.minWidth = `${next}px`;
             th.style.maxWidth = `${next}px`;
-            const startW2 = Number(SettingsStore.data.columnWidths?.startDate) || 90;
-            const endW2 = Number(SettingsStore.data.columnWidths?.completionTime) || 170;
+            const startW2 = __tmGetFixedDateColumnWidth('startDate');
+            const endW2 = __tmGetFixedDateColumnWidth('completionTime');
             const total = Math.round(next + startW2 + endW2 + 2);
             if (table) {
                 table.style.width = `${total}px`;

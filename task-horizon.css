@@ -1000,6 +1000,74 @@
     pointer-events: none;
 }
 
+.tm-task-context-priority {
+    min-width: 0;
+    padding: 6px 10px 8px;
+    box-sizing: border-box;
+}
+
+.tm-task-context-priority__title {
+    margin: 0 0 6px;
+    color: var(--b3-theme-on-surface, var(--tm-secondary-text));
+    font-size: 12px;
+    line-height: 1.2;
+}
+
+.tm-task-context-priority__row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+}
+
+.tm-task-context-priority__btn {
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--tm-context-priority-color, var(--tm-secondary-text));
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background-color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.tm-task-context-priority__btn:hover,
+.tm-task-context-priority__btn:focus-visible {
+    outline: none;
+    border-color: color-mix(in srgb, var(--tm-context-priority-color, var(--tm-secondary-text)) 30%, transparent);
+    background: color-mix(in srgb, var(--tm-context-priority-color, var(--tm-secondary-text)) 10%, var(--b3-theme-surface-light, var(--tm-hover-bg)) 90%);
+}
+
+.tm-task-context-priority__btn.is-active {
+    border-color: color-mix(in srgb, var(--tm-context-priority-color, var(--tm-secondary-text)) 42%, transparent);
+    background: color-mix(in srgb, var(--tm-context-priority-color, var(--tm-secondary-text)) 14%, var(--b3-theme-surface-light, var(--tm-hover-bg)) 86%);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tm-context-priority-color, var(--tm-secondary-text)) 18%, transparent);
+}
+
+.tm-task-context-priority__btn:disabled {
+    cursor: wait;
+    opacity: 0.7;
+}
+
+.tm-task-context-priority__btn .tm-priority-jira {
+    color: inherit;
+    pointer-events: none;
+}
+
+.tm-task-context-priority__btn .tm-priority-jira__icon {
+    width: 16px;
+    height: 16px;
+}
+
+.tm-task-context-priority__btn .tm-priority-jira__icon svg {
+    width: 16px;
+    height: 16px;
+}
+
 .tm-custom-field-cell,
 .tm-task-detail-custom-fields,
 .tm-task-detail-custom-field-value {
@@ -8374,10 +8442,15 @@ select.tm-btn-secondary {
     margin-left: 12px;
 }
 
-.tm-modal.tm-modal--mobile .tm-checklist-pane--compact .tm-status-tag,
-.tm-modal.tm-modal--dock .tm-checklist-pane--compact .tm-status-tag {
+.tm-modal.tm-modal--mobile .tm-checklist-pane--compact .tm-checklist-title-row > .tm-status-tag,
+.tm-modal.tm-modal--dock .tm-checklist-pane--compact .tm-checklist-title-row > .tm-status-tag {
     margin-left: auto;
     margin-right: -3px;
+}
+
+.tm-modal.tm-modal--mobile .tm-checklist-pane--compact .tm-checklist-title-row--has-compact-meta > .tm-status-tag,
+.tm-modal.tm-modal--dock .tm-checklist-pane--compact .tm-checklist-title-row--has-compact-meta > .tm-status-tag {
+    margin-left: 0;
 }
 
 .tm-checklist-pane--compact .tm-checklist-item:hover {
@@ -8617,11 +8690,22 @@ select.tm-btn-secondary {
 }
 
 .tm-checklist-pane--compact .tm-status-tag {
-    flex: 0 0 auto;
-    margin-left: auto;
     font-size: var(--tm-checklist-compact-status-font-size, 14px);
     padding: var(--tm-checklist-compact-status-padding-y, 2px) var(--tm-checklist-compact-status-padding-x, 4px);
     border-radius: var(--tm-checklist-compact-status-radius, 5px);
+}
+
+.tm-checklist-pane--compact .tm-checklist-title-row > .tm-status-tag {
+    flex: 0 0 auto;
+    margin-left: auto;
+}
+
+.tm-checklist-pane--compact .tm-checklist-title-row--has-compact-meta {
+    gap: 4px;
+}
+
+.tm-checklist-pane--compact .tm-checklist-title-row--has-compact-meta > .tm-status-tag {
+    margin-left: 0;
 }
 
 .tm-checklist-side {
@@ -10716,12 +10800,15 @@ th[data-col] {
     }
 
     .tm-checklist-pane--compact .tm-status-tag {
-        margin-left: 0;
-        margin-right: -3px;
         padding: 1px 6px;
         font-size: 11px;
         line-height: 16px;
         border-radius: 5px;
+    }
+
+    .tm-checklist-pane--compact .tm-checklist-title-row > .tm-status-tag {
+        margin-left: 0;
+        margin-right: -3px;
     }
 
     .tm-checklist-pane--compact .tm-checklist-meta-chip {
