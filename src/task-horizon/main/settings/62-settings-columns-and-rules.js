@@ -606,9 +606,15 @@
         if (!ok) return false;
         const nextDefs = __tmGetCustomFieldDefs().filter((item) => String(item?.id || '').trim() !== currentFieldId);
         const colKey = __tmBuildCustomFieldColumnKey(currentFieldId);
+        const compactKey = `customField:${currentFieldId}`;
         SettingsStore.data.customFieldDefs = nextDefs;
         SettingsStore.data.columnOrder = (Array.isArray(SettingsStore.data.columnOrder) ? SettingsStore.data.columnOrder : []).filter((key) => key !== colKey);
         SettingsStore.data.hiddenColumns = (Array.isArray(SettingsStore.data.hiddenColumns) ? SettingsStore.data.hiddenColumns : []).filter((key) => key !== colKey);
+        ['desktopChecklistCompactMetaFields', 'dockChecklistCompactMetaFields', 'mobileChecklistCompactMetaFields'].forEach((settingsKey) => {
+            SettingsStore.data[settingsKey] = __tmNormalizeCompactChecklistMetaFields(SettingsStore.data[settingsKey], []).filter((key) => key !== compactKey);
+        });
+        SettingsStore.data.quickbarInlineFields = (Array.isArray(SettingsStore.data.quickbarInlineFields) ? SettingsStore.data.quickbarInlineFields : []).filter((key) => String(key || '').trim() !== compactKey);
+        SettingsStore.data.quickbarVisibleItems = (Array.isArray(SettingsStore.data.quickbarVisibleItems) ? SettingsStore.data.quickbarVisibleItems : []).filter((key) => String(key || '').trim() !== compactKey);
         if (SettingsStore.data.columnWidths && typeof SettingsStore.data.columnWidths === 'object') {
             delete SettingsStore.data.columnWidths[colKey];
         }
@@ -633,6 +639,8 @@
         } catch (e) {}
         SettingsStore.normalizeColumns();
         await SettingsStore.save();
+        try { globalThis.__taskHorizonQuickbarRefresh?.(); } catch (e) {}
+        try { globalThis.__taskHorizonQuickbarRefreshInline?.(); } catch (e) {}
         hint('✅ 自定义列已删除', 'success');
         if (state.settingsModal) showSettings();
         render();
@@ -652,9 +660,18 @@
                 .map((key) => String(key || '').trim())
                 .filter(Boolean)
         );
+        const compactKeys = new Set(
+            defs.map((field) => `customField:${String(field?.id || '').trim()}`)
+                .filter((key) => __tmParseCustomFieldColumnKey(key))
+        );
         SettingsStore.data.customFieldDefs = [];
         SettingsStore.data.columnOrder = (Array.isArray(SettingsStore.data.columnOrder) ? SettingsStore.data.columnOrder : []).filter((key) => !colKeys.has(String(key || '').trim()));
         SettingsStore.data.hiddenColumns = (Array.isArray(SettingsStore.data.hiddenColumns) ? SettingsStore.data.hiddenColumns : []).filter((key) => !colKeys.has(String(key || '').trim()));
+        ['desktopChecklistCompactMetaFields', 'dockChecklistCompactMetaFields', 'mobileChecklistCompactMetaFields'].forEach((settingsKey) => {
+            SettingsStore.data[settingsKey] = __tmNormalizeCompactChecklistMetaFields(SettingsStore.data[settingsKey], []).filter((key) => !compactKeys.has(String(key || '').trim()));
+        });
+        SettingsStore.data.quickbarInlineFields = (Array.isArray(SettingsStore.data.quickbarInlineFields) ? SettingsStore.data.quickbarInlineFields : []).filter((key) => !compactKeys.has(String(key || '').trim()));
+        SettingsStore.data.quickbarVisibleItems = (Array.isArray(SettingsStore.data.quickbarVisibleItems) ? SettingsStore.data.quickbarVisibleItems : []).filter((key) => !compactKeys.has(String(key || '').trim()));
         if (SettingsStore.data.columnWidths && typeof SettingsStore.data.columnWidths === 'object') {
             colKeys.forEach((key) => { delete SettingsStore.data.columnWidths[key]; });
         }
@@ -679,6 +696,8 @@
         } catch (e) {}
         SettingsStore.normalizeColumns();
         await SettingsStore.save();
+        try { globalThis.__taskHorizonQuickbarRefresh?.(); } catch (e) {}
+        try { globalThis.__taskHorizonQuickbarRefreshInline?.(); } catch (e) {}
         hint('✅ 自定义列设置已清空', 'success');
         if (state.settingsModal) showSettings();
         render();
@@ -947,6 +966,8 @@
                 await SettingsStore.save();
                 currentFieldId = nextId;
                 draft = resolveDraft(__tmGetCustomFieldDefs().find((field) => String(field?.id || '').trim() === nextId) || null);
+                try { globalThis.__taskHorizonQuickbarRefresh?.(); } catch (e) {}
+                try { globalThis.__taskHorizonQuickbarRefreshInline?.(); } catch (e) {}
                 hint('✅ 自定义列已保存', 'success');
                 if (state.settingsModal) showSettings();
                 render();

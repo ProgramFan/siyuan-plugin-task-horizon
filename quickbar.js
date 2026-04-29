@@ -166,6 +166,149 @@
         inlineMetaActiveTargetsCacheValue = false;
     }
 
+    function normalizeQuickbarCustomFieldId(raw, fallback = '') {
+        const normalizeToken = (value) => String(value || '').trim().toLowerCase()
+            .replace(/\s+/g, '-')
+            .replace(/[^a-z0-9-]/g, '-')
+            .replace(/-+/g, '-')
+            .replace(/^-+|-+$/g, '');
+        return normalizeToken(raw) || normalizeToken(fallback) || '';
+    }
+
+    function parseQuickbarCustomFieldToken(value) {
+        const raw = String(value || '').trim();
+        if (raw.startsWith('customField:')) return normalizeQuickbarCustomFieldId(raw.slice('customField:'.length));
+        if (raw.startsWith('cf:')) return normalizeQuickbarCustomFieldId(raw.slice('cf:'.length));
+        return '';
+    }
+
+    function normalizeQuickbarCustomFieldAttrName(raw, fallback = '') {
+        const prefix = 'custom-tm-';
+        const fallbackToken = normalizeQuickbarCustomFieldId(fallback || '', 'field') || 'field';
+        let base = String(raw || '').trim();
+        if (!base) base = String(fallback || '').trim();
+        if (base.startsWith(prefix)) base = String(base.slice(prefix.length) || '').trim();
+        return normalizeQuickbarCustomFieldId(base, fallbackToken) || fallbackToken;
+    }
+
+    function buildQuickbarCustomFieldAttrStorageKey(attrName, fallback = 'field') {
+        const prefix = 'custom-tm-';
+        const fallbackToken = normalizeQuickbarCustomFieldAttrName(fallback || '', 'field') || 'field';
+        const name = normalizeQuickbarCustomFieldAttrName(attrName, fallbackToken) || fallbackToken;
+        const safeFallback = `${prefix}${fallbackToken}`;
+        const key = `${prefix}${name}`;
+        return /^custom-[a-zA-Z0-9_-]+$/.test(key) ? key : safeFallback;
+    }
+
+    function normalizeQuickbarCustomFieldOption(option, optionIndex, fieldId) {
+        const source = (option && typeof option === 'object') ? option : { name: option };
+        const name = String(source.name ?? source.label ?? source.value ?? '').trim();
+        const id = normalizeQuickbarCustomFieldId(source.id ?? source.value ?? name, `${fieldId || 'field'}-option-${optionIndex + 1}`);
+        if (!id && !name) return null;
+        return {
+            id: id || normalizeQuickbarCustomFieldId(name, `${fieldId || 'field'}-option-${optionIndex + 1}`),
+            name: name || id || `选项${optionIndex + 1}`,
+            color: String(source.color || '#9ca3af').trim() || '#9ca3af',
+        };
+    }
+
+    function getQuickbarCustomFieldDefs() {
+        try {
+            const raw = JSON.parse(localStorage.getItem('tm_custom_field_defs') || '[]');
+            const source = Array.isArray(raw) ? raw : [];
+            const seen = new Set();
+            const seenAttrKeys = new Set();
+            return source.map((item, index) => {
+                const sourceField = (item && typeof item === 'object') ? item : {};
+                const name = String(sourceField.name || sourceField.label || '').trim() || `自定义列${index + 1}`;
+                let id = normalizeQuickbarCustomFieldId(sourceField.id, name || `field-${index + 1}`);
+                if (!id) id = `field-${index + 1}`;
+                let baseId = id;
+                let dedupe = 2;
+                while (seen.has(id)) {
+                    id = `${baseId}-${dedupe}`;
+                    dedupe += 1;
+                }
+                seen.add(id);
+                const rawType = String(sourceField.type || '').trim();
+                const type = rawType === 'multi' ? 'multi' : (rawType === 'text' ? 'text' : 'single');
+                let attrKey = normalizeQuickbarCustomFieldAttrName(sourceField.attrKey || id || name, id);
+                const baseAttrKey = attrKey;
+                let attrDedupe = 2;
+                while (seenAttrKeys.has(attrKey)) {
+                    attrKey = `${baseAttrKey}-${attrDedupe}`;
+                    attrDedupe += 1;
+                }
+                seenAttrKeys.add(attrKey);
+                const options = (Array.isArray(sourceField.options) ? sourceField.options : [])
+                    .map((option, optionIndex) => normalizeQuickbarCustomFieldOption(option, optionIndex, id))
+                    .filter(Boolean);
+                return {
+                    id,
+                    name,
+                    attrKey,
+                    type,
+                    options,
+                    enabled: sourceField.enabled !== false,
+                };
+            }).filter((field) => field.enabled !== false && field.type !== 'text');
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function getQuickbarCustomFieldDefById(fieldId) {
+        const id = normalizeQuickbarCustomFieldId(fieldId);
+        if (!id) return null;
+        return getQuickbarCustomFieldDefs().find((field) => String(field?.id || '').trim() === id) || null;
+    }
+
+    function buildQuickbarCustomFieldConfig(field) {
+        const id = String(field?.id || '').trim();
+        if (!id) return null;
+        const attrKey = buildQuickbarCustomFieldAttrStorageKey(field?.attrKey || id || field?.name, id);
+        const options = (Array.isArray(field?.options) ? field.options : []).map((option) => ({
+            value: String(option?.id || '').trim(),
+            label: String(option?.name || option?.id || '').trim(),
+            color: String(option?.color || '#9ca3af').trim() || '#9ca3af',
+        })).filter((option) => option.value && option.label);
+        return {
+            name: String(field?.name || id).trim() || id,
+            attrKey,
+            fieldToken: `customField:${id}`,
+            type: String(field?.type || '').trim() === 'multi' ? 'multi-select' : 'select',
+            options,
+            defaultValue: '',
+            customFieldId: id,
+            customFieldType: String(field?.type || '').trim() === 'multi' ? 'multi' : 'single',
+            customField: field,
+        };
+    }
+
+    function getQuickbarCustomFieldConfigByToken(token) {
+        const fieldId = parseQuickbarCustomFieldToken(token);
+        const field = fieldId ? getQuickbarCustomFieldDefById(fieldId) : null;
+        return field ? buildQuickbarCustomFieldConfig(field) : null;
+    }
+
+    function getQuickbarCustomFieldConfigByAttrKey(attrKey) {
+        const key = String(attrKey || '').trim();
+        if (!key) return null;
+        for (const field of getQuickbarCustomFieldDefs()) {
+            const config = buildQuickbarCustomFieldConfig(field);
+            if (config && config.attrKey === key) return config;
+        }
+        return null;
+    }
+
+    function normalizeQuickbarSettingFieldKey(value, allowSet) {
+        const key = String(value || '').trim();
+        if (allowSet instanceof Set && allowSet.has(key)) return key;
+        const customFieldId = parseQuickbarCustomFieldToken(key);
+        if (!customFieldId) return '';
+        return getQuickbarCustomFieldDefById(customFieldId) ? `customField:${customFieldId}` : '';
+    }
+
     function getQuickbarInlineSettings(forceRefresh = false) {
         if (!forceRefresh && !quickbarInlineSettingsCacheDirty && quickbarInlineSettingsCache) {
             return quickbarInlineSettingsCache;
@@ -176,7 +319,7 @@
             const showOnMobile = !!JSON.parse(localStorage.getItem('tm_quickbar_inline_show_on_mobile') || 'false');
             const rawFields = JSON.parse(localStorage.getItem('tm_quickbar_inline_fields') || 'null');
             const fields = Array.isArray(rawFields)
-                ? rawFields.map(v => String(v || '').trim()).filter(v => quickbarInlineFieldAllowSet.has(v))
+                ? rawFields.map(v => normalizeQuickbarSettingFieldKey(v, quickbarInlineFieldAllowSet)).filter(Boolean)
                 : fallbackFields.slice();
             quickbarInlineSettingsCache = {
                 enabled,
@@ -196,7 +339,7 @@
         try {
             const rawItems = JSON.parse(localStorage.getItem('tm_quickbar_visible_items') || 'null');
             const items = Array.isArray(rawItems)
-                ? rawItems.map(v => String(v || '').trim()).filter(v => quickbarVisibleItemAllowSet.has(v))
+                ? rawItems.map(v => normalizeQuickbarSettingFieldKey(v, quickbarVisibleItemAllowSet)).filter(Boolean)
                 : quickbarVisibleItemDefaults.slice();
             return { items: items.length ? items : quickbarVisibleItemDefaults.slice() };
         } catch (e) {
@@ -852,6 +995,47 @@
                 line-height: 26px;
                 align-items: center;
             }
+            .sy-custom-props-floatbar__prop--custom-field {
+                gap: 4px;
+                height: auto;
+                min-height: 26px;
+                padding: 0;
+                border: 0;
+                background: transparent;
+                line-height: normal;
+                max-width: min(42vw, 240px);
+            }
+            .sy-custom-props-floatbar__prop--custom-field:hover {
+                border: 0;
+                background: transparent;
+            }
+            .sy-custom-props-floatbar__prop--custom-empty {
+                opacity: 0.66;
+                padding: 0 8px;
+                border: 1px solid var(--b3-border-color);
+                background: var(--b3-theme-surface);
+                line-height: 26px;
+            }
+            .sy-custom-props-floatbar__prop--custom-empty:hover {
+                border-color: var(--b3-theme-primary);
+                background: var(--b3-theme-background);
+            }
+            .sy-custom-props-floatbar__custom-tags {
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+                min-width: 0;
+                max-width: 100%;
+                overflow: hidden;
+            }
+            .sy-custom-props-floatbar__custom-tags .sy-custom-props-floatbar__option-label--status {
+                min-width: 0;
+                max-width: 112px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                flex: 0 1 auto;
+            }
             .sy-custom-props-floatbar__prop--core .sy-custom-props-floatbar__prop-value {
                 display: inline-block;
                 max-width: 132px;
@@ -925,6 +1109,12 @@
                 flex-direction: column;
                 gap: 2px;
             }
+            .sy-custom-props-floatbar__select-list {
+                display: flex;
+                flex-direction: column;
+                gap: 2px;
+                max-width: 100%;
+            }
             .sy-custom-props-floatbar__option {
                 width: 100%;
                 text-align: left;
@@ -947,6 +1137,36 @@
             .sy-custom-props-floatbar__option.is-active {
                 background: var(--b3-theme-primary);
                 color: var(--b3-theme-on-primary);
+            }
+            .sy-custom-props-floatbar__option.is-clear,
+            .sy-custom-props-floatbar__option.is-done {
+                display: flex;
+                align-items: center;
+                justify-content: flex-start;
+                width: auto;
+                height: 28px;
+                line-height: 28px;
+                padding: 0 10px;
+                border: 0;
+                border-radius: 6px;
+                background: transparent;
+                box-shadow: none;
+                color: var(--b3-theme-on-surface, var(--tm-text-color));
+                font-size: 12px;
+                font-weight: 400;
+            }
+            .sy-custom-props-floatbar__option.is-done {
+                color: var(--b3-theme-primary, var(--tm-primary-color));
+            }
+            .sy-custom-props-floatbar__select-actions {
+                display: flex;
+                justify-content: flex-start;
+                align-items: center;
+                gap: 2px;
+                width: 100%;
+                margin-top: 4px;
+                padding-top: 4px;
+                border-top: 1px solid var(--b3-border-color);
             }
             .sy-custom-props-floatbar__option-label {
                 display: inline-flex;
@@ -1435,6 +1655,15 @@
                 line-height: 20px;
                 padding: 0 6px;
                 border-radius: 999px;
+            }
+            .sy-custom-props-inline-chip--custom-field {
+                padding: 0;
+                border: 0;
+                background: transparent;
+            }
+            .sy-custom-props-inline-chip--custom-field:hover {
+                border: 0;
+                background: transparent;
             }
             .sy-custom-props-inline-chip--priority .sy-custom-props-floatbar__priority-icon {
                 width: 14px;
@@ -1984,6 +2213,12 @@
                 try { refreshInlineMetaMode(true); } catch (e) {}
                 return;
             }
+            if (e.key === 'tm_custom_field_defs' || e.key === 'tm_custom_field_defs_version') {
+                invalidateQuickbarInlineSettingsCache();
+                try { renderFloatBar(); } catch (e) {}
+                try { refreshInlineMetaMode(true); } catch (e) {}
+                return;
+            }
             if (isInlineMetaScopeStorageKey(e.key)) {
                 clearInlineMetaScopeDocCache();
                 try { refreshInlineMetaMode(true); } catch (e) {}
@@ -2125,6 +2360,7 @@
                         withFilters: false,
                         broadcast: false,
                         recordUndo: false,
+                        skipNoopCheck: options?.skipNoopCheck === true,
                     });
                     const result = {
                         success: true,
@@ -2147,12 +2383,17 @@
                     return result;
                 } catch (e) {}
             }
-            const result = await setBlockCustomAttrs(id, { [key]: value });
+            const fallbackAttrs = { [key]: value };
+            const result = await setBlockCustomAttrs(id, fallbackAttrs);
+            const mirrorTaskId = String(resolveCurrentTaskId() || '').trim();
+            if (result?.success && mirrorTaskId && mirrorTaskId !== id) {
+                try { await setBlockCustomAttrs(mirrorTaskId, fallbackAttrs); } catch (e) {}
+            }
             const finalResult = {
                 success: !!result?.success,
                 changed: !!result?.success,
                 viaSharedApi: false,
-                taskId: id,
+                taskId: mirrorTaskId || id,
                 requestedTaskId: id,
                 value: value == null ? '' : String(value),
             };
@@ -2319,7 +2560,7 @@
             const c = String(color || '#757575').trim() || '#757575';
             const bg = hexToRgba(c, 0.16) || 'rgba(117,117,117,0.16)';
             const border = hexToRgba(c, 0.35) || 'rgba(117,117,117,0.35)';
-            return `--qb-status-bg:${bg};--qb-status-fg:${c};--qb-status-border:${border};`;
+            return `--qb-status-bg:${bg};--qb-status-fg:${c};--qb-status-border:${border};--tm-status-bg:${bg};--tm-status-fg:${c};--tm-status-border:${border};`;
         }
 
         function buildTooltipAttrs(label, side = 'top') {
@@ -2374,11 +2615,96 @@
                 `;
         }
 
+        function findQuickbarCustomFieldOption(config, rawValue) {
+            const token = String(rawValue ?? '').trim();
+            if (!token) return null;
+            const options = Array.isArray(config?.options) ? config.options : [];
+            return options.find((option) => String(option?.value || '').trim() === token)
+                || options.find((option) => String(option?.label || '').trim() === token)
+                || null;
+        }
+
+        function normalizeQuickbarCustomFieldValue(config, rawValue) {
+            const isMulti = String(config?.customFieldType || '').trim() === 'multi' || String(config?.type || '').trim() === 'multi-select';
+            if (isMulti) {
+                let list = [];
+                if (Array.isArray(rawValue)) {
+                    list = rawValue;
+                } else {
+                    const raw = String(rawValue ?? '').trim();
+                    if (!raw) return [];
+                    try {
+                        const parsed = JSON.parse(raw);
+                        list = Array.isArray(parsed) ? parsed : (parsed == null ? [] : [parsed]);
+                    } catch (e) {
+                        list = raw.split(/\s*[,，、]\s*/).map((item) => String(item || '').trim()).filter(Boolean);
+                    }
+                }
+                const out = [];
+                const seen = new Set();
+                list.forEach((item) => {
+                    const option = findQuickbarCustomFieldOption(config, item);
+                    const id = String(option?.value || item || '').trim();
+                    if (!id || seen.has(id)) return;
+                    seen.add(id);
+                    out.push(id);
+                });
+                return out;
+            }
+            const raw = String(rawValue ?? '').trim();
+            if (!raw) return '';
+            const option = findQuickbarCustomFieldOption(config, raw);
+            return String(option?.value || raw).trim();
+        }
+
+        function getQuickbarCustomFieldSelectedOptions(config, rawValue) {
+            const normalized = normalizeQuickbarCustomFieldValue(config, rawValue);
+            const values = Array.isArray(normalized)
+                ? normalized
+                : (String(normalized || '').trim() ? [String(normalized || '').trim()] : []);
+            return values.map((value) => {
+                const option = findQuickbarCustomFieldOption(config, value);
+                if (option) return option;
+                return { value, label: value || '未命名', color: '#9ca3af', missing: true };
+            });
+        }
+
+        function serializeQuickbarCustomFieldValueForSave(config, selectedValues) {
+            const values = Array.isArray(selectedValues)
+                ? selectedValues
+                : (String(selectedValues || '').trim() ? [String(selectedValues || '').trim()] : []);
+            return values.map((value) => {
+                const option = findQuickbarCustomFieldOption(config, value);
+                return String(option?.label || value || '').trim();
+            }).filter(Boolean).join(', ');
+        }
+
+        function renderQuickbarCustomFieldTags(config, rawValue, maxTags = 2) {
+            const selected = getQuickbarCustomFieldSelectedOptions(config, rawValue);
+            const max = Math.max(1, Number(maxTags) || 2);
+            const shown = selected.slice(0, max);
+            const chips = shown.map((option) => `
+                <span class="sy-custom-props-floatbar__option-label sy-custom-props-floatbar__option-label--status${option?.missing ? ' is-missing' : ''}" style="${buildStatusChipStyle(option?.color || '#9ca3af')}">${esc(String(option?.label || option?.value || '').trim() || '未命名')}</span>
+            `.trim()).join('');
+            const remain = selected.length - shown.length;
+            const remainHtml = remain > 0
+                ? `<span class="sy-custom-props-floatbar__option-label sy-custom-props-floatbar__option-label--status" style="${buildStatusChipStyle('#9ca3af')}">+${remain}</span>`
+                : '';
+            return `${chips}${remainHtml}`;
+        }
+
+        function getQuickbarCustomFieldTooltip(config, rawValue) {
+            const selected = getQuickbarCustomFieldSelectedOptions(config, rawValue);
+            const name = String(config?.name || '').trim();
+            const valueText = selected.map((option) => String(option?.label || option?.value || '').trim()).filter(Boolean).join(', ');
+            return valueText ? `${name}: ${valueText}` : name;
+        }
+
         function normalizeCustomProps(attrs) {
             const data = attrs && typeof attrs === 'object' ? attrs : {};
             const statusOptions = getStatusOptionsSnapshot();
             const defaultUndoneStatusId = getDefaultUndoneStatusId(statusOptions);
-            return {
+            const out = {
                 'custom-priority': data['custom-priority'] || 'none',
                 'custom-status': String(data['custom-status'] || '').trim() || defaultUndoneStatusId,
                 'custom-completion-time': data['custom-completion-time'] || '',
@@ -2388,6 +2714,12 @@
                 'custom-pinned': data['custom-pinned'] || '',
                 'bookmark': data['bookmark'] || ''
             };
+            getQuickbarCustomFieldDefs().forEach((field) => {
+                const config = buildQuickbarCustomFieldConfig(field);
+                if (!config?.attrKey) return;
+                out[config.attrKey] = data[config.attrKey] || '';
+            });
+            return out;
         }
 
         function isReminderRelatedAttrKey(attrKey) {
@@ -2398,7 +2730,8 @@
                 || key === 'custom-start-date'
                 || key === 'custom-completion-time'
                 || key === 'custom-task-repeat-rule'
-                || key === 'custom-task-repeat-state';
+                || key === 'custom-task-repeat-state'
+                || key.startsWith('custom-tm-');
         }
 
         async function refreshCurrentReminderSnapshot(force = false) {
@@ -2443,6 +2776,10 @@
 
         function getInlineFieldConfig(attrKey) {
             const key = String(attrKey || '').trim();
+            const customConfigByToken = getQuickbarCustomFieldConfigByToken(key);
+            if (customConfigByToken) return customConfigByToken;
+            const customConfigByAttr = getQuickbarCustomFieldConfigByAttrKey(key);
+            if (customConfigByAttr) return customConfigByAttr;
             const inlineConfig = quickbarInlineFieldDefs.find(item => item.attrKey === key);
             if (!inlineConfig) return null;
             const floatbarConfig = [...customPropsConfig.firstRow, ...customPropsConfig.secondRow]
@@ -2481,6 +2818,19 @@
             const escapedName = String(config.name || '').replace(/"/g, '&quot;');
             const rawValue = String(value ?? '');
             const escapedValue = rawValue.replace(/"/g, '&quot;');
+            if (config.customFieldId) {
+                const selected = getQuickbarCustomFieldSelectedOptions(config, rawValue);
+                if (!selected.length) return '';
+                const normalizedValue = Array.isArray(normalizeQuickbarCustomFieldValue(config, rawValue))
+                    ? normalizeQuickbarCustomFieldValue(config, rawValue).join(', ')
+                    : String(normalizeQuickbarCustomFieldValue(config, rawValue) || '').trim();
+                const escapedCustomValue = esc(String(normalizedValue || '')).replace(/"/g, '&quot;');
+                return `
+                    <span class="sy-custom-props-inline-chip sy-custom-props-inline-chip--custom-field" data-inline-attr="${escapedAttr}" data-inline-type="${esc(String(config.type || 'select')).replace(/"/g, '&quot;')}" data-inline-name="${escapedName}" data-inline-value="${escapedCustomValue}" title="${escapedName}">
+                        <span class="sy-custom-props-floatbar__custom-tags">${renderQuickbarCustomFieldTags(config, rawValue, 2)}</span>
+                    </span>
+                `.trim();
+            }
             if (attrKey === 'custom-status') {
                 const effectiveValue = rawValue || getDefaultUndoneStatusId();
                 const statusInfo = getStatusDisplay(effectiveValue);
@@ -2597,7 +2947,10 @@
             const settings = cfg && Array.isArray(cfg.fields) ? cfg : getQuickbarInlineSettings();
             const sourceProps = props && typeof props === 'object' ? props : normalizeCustomProps();
             return settings.fields
-                .map((attrKey) => renderInlineMetaField(getInlineFieldConfig(attrKey), sourceProps[attrKey]))
+                .map((attrKey) => {
+                    const config = getInlineFieldConfig(attrKey);
+                    return renderInlineMetaField(config, config ? sourceProps[config.attrKey] : sourceProps[attrKey]);
+                })
                 .filter(Boolean).join('');
         }
 
@@ -2635,6 +2988,12 @@
             const mainProps = mainConfigs
                 .filter(config => visibleSet.has(String(config?.attrKey || '').trim()))
                 .map(config => renderPropElement(config, currentProps[config.attrKey]));
+            visibleSettings.items
+                .map((itemKey) => getQuickbarCustomFieldConfigByToken(itemKey))
+                .filter(Boolean)
+                .forEach((config) => {
+                    mainProps.push(renderPropElement(config, currentProps[config.attrKey]));
+                });
             if (isAiFeatureEnabled() && visibleSet.has('action-ai-title')) {
                 mainProps.push(`<button class="sy-custom-props-floatbar__action" data-action="ai-title"${buildTooltipAttrs('AI 优化任务名称')}><span class="qb-icon">${renderPhosphorBoldIcon('sparkle')}</span></button>`);
             }
@@ -2677,6 +3036,21 @@
             const escapedName = esc(String(config.name || ''));
             const escapedValue = esc(String(value ?? ''));
             const attrKey = String(config.attrKey || '').trim();
+
+            if (config.customFieldId) {
+                const tagsHtml = renderQuickbarCustomFieldTags(config, value, 2);
+                const hasValue = !!tagsHtml;
+                return `
+                    <span class="sy-custom-props-floatbar__prop sy-custom-props-floatbar__prop--custom-field ${hasValue ? '' : 'sy-custom-props-floatbar__prop--custom-empty'}"
+                          data-attr="${esc(attrKey)}"
+                          data-type="${esc(String(config.type || 'select'))}"
+                          data-name="${escapedName}"
+                          data-value="${escapedValue}"
+                          ${buildTooltipAttrs(getQuickbarCustomFieldTooltip(config, value))}>
+                        ${hasValue ? `<span class="sy-custom-props-floatbar__custom-tags">${tagsHtml}</span>` : `<span class="sy-custom-props-floatbar__prop-value">${escapedName}</span>`}
+                    </span>
+                `;
+            }
 
             if (config.type === 'select') {
                 if (attrKey === 'custom-priority') {
@@ -2736,6 +3110,8 @@
         // 绑定属性点击事件
         function bindPropClickEvents() {
             floatBar.onclick = async (e) => {
+                try { e.preventDefault?.(); } catch (err) {}
+                try { e.stopPropagation?.(); } catch (err) {}
                 const actionEl = e.target.closest('.sy-custom-props-floatbar__action');
                 if (actionEl) {
                     const action = String(actionEl.dataset.action || '');
@@ -2801,7 +3177,7 @@
 
                 // 找到对应的属性配置
                 const allProps = [...customPropsConfig.firstRow, ...customPropsConfig.secondRow];
-                activePropConfig = allProps.find(p => p.attrKey === attrKey);
+                activePropConfig = allProps.find(p => p.attrKey === attrKey) || getQuickbarCustomFieldConfigByAttrKey(attrKey);
                 if (!activePropConfig) return;
 
                 // 如果是状态属性，每次打开前重新加载选项
@@ -2809,7 +3185,7 @@
                     loadStatusOptions();
                 }
 
-                if (propType === 'select') {
+                if (propType === 'select' || propType === 'multi-select') {
                     // 显示选择菜单
                     showSelectMenu(propEl, activePropConfig, currentValue);
                 } else if (propType === 'date') {
@@ -2826,40 +3202,75 @@
         function showSelectMenu(anchorEl, config, currentValue) {
             const options = config.options;
             if (!Array.isArray(options) || options.length === 0) return;
+            const blockIdAtOpen = String(currentBlockId || '').trim();
             const isStatusSelect = String(config?.attrKey || '').trim() === 'custom-status';
             const isPrioritySelect = String(config?.attrKey || '').trim() === 'custom-priority';
+            const isCustomFieldSelect = !!config?.customFieldId;
+            const isCustomFieldMulti = isCustomFieldSelect
+                && (String(config?.customFieldType || '').trim() === 'multi' || String(config?.type || '').trim() === 'multi-select');
+            let selectedCustomValues = new Set();
+            const currentCustomValue = isCustomFieldSelect ? normalizeQuickbarCustomFieldValue(config, currentValue) : '';
+            if (isCustomFieldSelect) {
+                selectedCustomValues = new Set(Array.isArray(currentCustomValue)
+                    ? currentCustomValue.map((item) => String(item || '').trim()).filter(Boolean)
+                    : (String(currentCustomValue || '').trim() ? [String(currentCustomValue || '').trim()] : []));
+            }
 
             // 更新菜单内容
-            selectMenu.innerHTML = options.map(opt => {
-                const isActive = opt.value === currentValue ? 'is-active' : '';
+            const optionHtml = options.map(opt => {
+                const value = String(opt?.value || '').trim();
+                const isActive = isCustomFieldSelect
+                    ? (selectedCustomValues.has(value) ? 'is-active' : '')
+                    : (opt.value === currentValue ? 'is-active' : '');
                 const escapedValue = String(opt.label).replace(/"/g, '&quot;');
                 const optionCls = isPrioritySelect
                     ? `sy-custom-props-floatbar__option is-priority ${isActive}`
                     : (isStatusSelect
                     ? `sy-custom-props-floatbar__option is-status ${isActive}`
-                    : `sy-custom-props-floatbar__option ${isActive}`);
+                    : (isCustomFieldSelect
+                    ? `sy-custom-props-floatbar__option is-status is-custom-field ${isActive}`
+                    : `sy-custom-props-floatbar__option ${isActive}`));
                 const labelHtml = isPrioritySelect
                     ? renderPriorityChip(opt.value, 'option')
                     : (isStatusSelect
                     ? `<span class="sy-custom-props-floatbar__option-label sy-custom-props-floatbar__option-label--status" style="${buildStatusChipStyle(opt.color)}">${opt.label}</span>`
-                    : `<span class="sy-custom-props-floatbar__option-label">${opt.label}</span>`);
+                    : (isCustomFieldSelect
+                    ? `<span class="sy-custom-props-floatbar__option-label sy-custom-props-floatbar__option-label--status" style="${buildStatusChipStyle(opt.color || '#9ca3af')}">${esc(String(opt.label || value || '').trim() || '未命名')}${isCustomFieldMulti && selectedCustomValues.has(value) ? '  ✓' : ''}</span>`
+                    : `<span class="sy-custom-props-floatbar__option-label">${opt.label}</span>`));
                 return `
                     <button class="${optionCls}"
-                            data-value="${opt.value}"
+                            data-value="${esc(value).replace(/"/g, '&quot;')}"
                             data-label="${escapedValue}">
                         ${labelHtml}
                     </button>
                 `.trim();
             }).join('');
+            const actionsHtml = isCustomFieldSelect
+                ? `
+                    <div class="sy-custom-props-floatbar__select-actions">
+                        <button type="button" class="sy-custom-props-floatbar__option is-clear"
+                                data-value=""
+                                data-label=""
+                                data-clear="1">清空</button>
+                        ${isCustomFieldMulti ? `<button type="button" class="sy-custom-props-floatbar__option is-done" data-done="1">完成</button>` : ''}
+                    </div>
+                `.trim()
+                : '';
+            selectMenu.innerHTML = isCustomFieldSelect
+                ? `<div class="sy-custom-props-floatbar__select-list">${optionHtml}</div>${actionsHtml}`
+                : optionHtml;
 
             // 计算位置
             const anchorRect = anchorEl.getBoundingClientRect();
             const maxLen = options.reduce((m, o) => Math.max(m, String(o?.label || '').length), 0);
+            const customFieldMinWidth = isCustomFieldMulti ? 92 : 88;
             const menuWidth = isPrioritySelect
                 ? Math.min(140, Math.max(84, maxLen * 10 + 18))
                 : (isStatusSelect
                 ? Math.min(170, Math.max(96, maxLen * 12 + 24))
-                : Math.min(200, Math.max(120, maxLen * 14 + 32)));
+                : (isCustomFieldSelect
+                ? Math.min(220, Math.max(customFieldMinWidth, maxLen * 12 + 32))
+                : Math.min(200, Math.max(120, maxLen * 14 + 32))));
 
             if (isPrioritySelect) {
                 selectMenu.style.minWidth = '84px';
@@ -2867,6 +3278,9 @@
             } else if (isStatusSelect) {
                 selectMenu.style.minWidth = '96px';
                 selectMenu.style.maxWidth = '170px';
+            } else if (isCustomFieldSelect) {
+                selectMenu.style.minWidth = `${customFieldMinWidth}px`;
+                selectMenu.style.maxWidth = '220px';
             } else {
                 selectMenu.style.minWidth = '120px';
                 selectMenu.style.maxWidth = '200px';
@@ -2878,28 +3292,74 @@
 
             // 绑定选择事件
             selectMenu.onclick = async (e) => {
-                const optionEl = e.target.closest('.sy-custom-props-floatbar__option');
+                const doneEl = e.target.closest('[data-done="1"]');
+                if (doneEl) {
+                    selectMenu.classList.remove('is-visible');
+                    return;
+                }
+                const clearEl = e.target.closest('[data-clear="1"]');
+                const optionEl = clearEl || e.target.closest('.sy-custom-props-floatbar__option');
                 if (!optionEl) {
                     selectMenu.classList.remove('is-visible');
                     return;
                 }
 
-                const newValue = optionEl.dataset.value;
-                const newLabel = optionEl.dataset.label;
+                const selectedToken = String(optionEl.dataset.value || '').trim();
+                const isClearClick = optionEl.dataset.clear === '1';
+                const shouldClearCustomSingle = isCustomFieldSelect
+                    && !isCustomFieldMulti
+                    && !isClearClick
+                    && !!selectedToken
+                    && selectedCustomValues.has(selectedToken);
+                const didClearCustomValue = isCustomFieldSelect && (isClearClick || shouldClearCustomSingle);
+                const saveValue = isCustomFieldSelect
+                    ? (didClearCustomValue
+                        ? ''
+                        : serializeQuickbarCustomFieldValueForSave(config, isCustomFieldMulti
+                            ? (() => {
+                                const next = new Set(selectedCustomValues);
+                                if (next.has(selectedToken)) next.delete(selectedToken);
+                                else if (selectedToken) next.add(selectedToken);
+                                return Array.from(next);
+                            })()
+                            : selectedToken))
+                    : selectedToken;
 
-                const result = await saveTaskAttrWithUndo(currentBlockId, config.attrKey, newValue, {
+                const result = await saveTaskAttrWithUndo(blockIdAtOpen || currentBlockId, config.attrKey, saveValue, {
                     label: config.name,
+                    skipNoopCheck: isCustomFieldSelect && saveValue === '',
                 });
 
                 if (result.success) {
-                    const dispatchTaskId = String(result?.taskId || result?.id || currentBlockId).trim() || currentBlockId;
-                    const dispatchRequestedTaskId = String(result?.requestedTaskId || currentBlockId).trim() || currentBlockId;
-                    currentProps[config.attrKey] = newValue;
-                    renderFloatBar();
-                    patchInlineMetaCache(currentBlockId, { [config.attrKey]: newValue });
-                    refreshInlineMetaByTaskId(currentBlockId, false);
-                    showMessage(`已更新${config.name}`, false, 1500);
-                    dispatchTaskAttrUpdated(currentBlockId, config.attrKey, newValue, {
+                    const targetBlockId = blockIdAtOpen || currentBlockId;
+                    const dispatchTaskId = String(result?.taskId || result?.id || targetBlockId).trim() || targetBlockId;
+                    const dispatchRequestedTaskId = String(result?.requestedTaskId || targetBlockId).trim() || targetBlockId;
+                    if (isCustomFieldMulti) {
+                        const nextValues = optionEl.dataset.clear === '1' ? new Set() : new Set(selectedCustomValues);
+                        if (optionEl.dataset.clear !== '1') {
+                            if (nextValues.has(selectedToken)) nextValues.delete(selectedToken);
+                            else if (selectedToken) nextValues.add(selectedToken);
+                        }
+                        selectedCustomValues = nextValues;
+                        selectMenu.querySelectorAll('.sy-custom-props-floatbar__option.is-custom-field').forEach((button) => {
+                            const value = String(button?.dataset?.value || '').trim();
+                            const active = !!value && selectedCustomValues.has(value);
+                            button.classList.toggle('is-active', active);
+                            const chip = button.querySelector('.sy-custom-props-floatbar__option-label--status');
+                            if (chip) chip.textContent = `${String(button?.dataset?.label || value || '').trim()}${active ? '  ✓' : ''}`;
+                        });
+                    }
+                    if (!isCustomFieldMulti && isCustomFieldSelect) {
+                        selectedCustomValues = selectedToken && !didClearCustomValue ? new Set([selectedToken]) : new Set();
+                    }
+                    if (String(currentBlockId || '').trim() === String(targetBlockId || '').trim()) {
+                        currentProps[config.attrKey] = saveValue;
+                        renderFloatBar();
+                    }
+                    patchInlineMetaCache(targetBlockId, { [config.attrKey]: saveValue });
+                    refreshInlineMetaByTaskId(targetBlockId, false);
+                    showMessage(didClearCustomValue ? `已清空${config.name}` : `已更新${config.name}`, false, 1500);
+                    dispatchTaskAttrUpdated(targetBlockId, config.attrKey, saveValue, {
                         taskId: dispatchTaskId,
                         requestedTaskId: dispatchRequestedTaskId,
                     });
@@ -2907,7 +3367,7 @@
                     showMessage('更新失败', true, 2000);
                 }
 
-                selectMenu.classList.remove('is-visible');
+                if (!isCustomFieldMulti) selectMenu.classList.remove('is-visible');
             };
         }
 
@@ -3653,7 +4113,7 @@
                     currentProps = await getTaskCustomProps(currentBlockId, false);
                     activePropConfig = config;
                     const currentValue = String(chip.dataset.inlineValue || currentProps[attrKey] || '').trim();
-                    if (config.type === 'select') showSelectMenu(chip, config, currentValue);
+                    if (config.type === 'select' || config.type === 'multi-select') showSelectMenu(chip, config, currentValue);
                     else if (config.type === 'date') showDateEditor(chip, config, currentValue);
                     else showTextEditor(chip, config, currentValue);
                 }, true);
@@ -4708,6 +5168,11 @@
             storageHandler = (e) => {
                 try { __tmQBStatusRenderStorageHandler?.(e); } catch (err) {}
                 if (e.key === 'tm_quickbar_visible_items') {
+                    try {
+                        if (floatBar && floatBar.style.display !== 'none') renderFloatBar();
+                    } catch (err) {}
+                }
+                if (e.key === 'tm_custom_field_defs' || e.key === 'tm_custom_field_defs_version') {
                     try {
                         if (floatBar && floatBar.style.display !== 'none') renderFloatBar();
                     } catch (err) {}

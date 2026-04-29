@@ -840,6 +840,7 @@
             const needFilters = __tmRenderNeedFilters;
             __tmRenderNeedFilters = false;
             if (needFilters) applyFilters();
+            if (typeof __tmIsPluginVisibleNow === 'function' && !__tmIsPluginVisibleNow()) return;
             render();
         });
     }
@@ -1139,13 +1140,7 @@
         if (comparablePatch) {
             const inversePatch = __tmCaptureTaskPatchInverse(tid, comparablePatch);
             if (__tmIsPatchNoop(comparablePatch, inversePatch)) {
-                try {
-                    __tmPushRefreshDebug('task-attr-apply-skip-noop', {
-                        taskId: tid,
-                        attrKey: key,
-                    });
-                } catch (e) {}
-                return finish(false, 'noop');
+return finish(false, 'noop');
             }
         }
         let metaPatch = null;
@@ -1462,9 +1457,23 @@
         let parsed = { done: false, content: '' };
         try { parsed = API.parseTaskStatus(km || ''); } catch (e) {}
         let attrs = {};
+        const readAttrs = async (blockId) => {
+            const targetId = String(blockId || '').trim();
+            if (!targetId) return {};
+            try {
+                const res = await API.call('/api/attr/getBlockAttrs', { id: targetId });
+                if (res && res.code === 0 && res.data && typeof res.data === 'object') return res.data;
+            } catch (e) {}
+            return {};
+        };
         try {
-            const res = await API.call('/api/attr/getBlockAttrs', { id: attrsId });
-            if (res && res.code === 0 && res.data && typeof res.data === 'object') attrs = res.data;
+            const hostAttrs = await readAttrs(attrsId);
+            const taskAttrs = attrsId && attrsId !== sourceId ? await readAttrs(sourceId) : hostAttrs;
+            attrs = { ...taskAttrs, ...hostAttrs };
+            ['custom-start-date', 'custom-completion-time', 'custom-time'].forEach((key) => {
+                const taskValue = String(taskAttrs?.[key] ?? '').trim();
+                if (taskValue) attrs[key] = taskAttrs[key];
+            });
         } catch (e) {}
         let blockRow = null;
         try {
@@ -1520,6 +1529,66 @@
             }, [bid, sourceId, attrsId], { force: false });
         }
         return row;
+    }
+
+    async function __tmHydrateChecklistVisibleDateAttrs(tasks, options = {}) {
+        if (!(globalThis.__tmRuntimeState?.isViewMode?.('checklist') ?? (String(state.viewMode || '').trim() === 'checklist'))) return { changed: false, changedCount: 0 };
+        const list = Array.isArray(tasks) ? tasks.filter((task) => task && typeof task === 'object') : [];
+        if (!list.length) return { changed: false, changedCount: 0 };
+        const visibleDateKeys = [
+            { attr: 'custom-start-date', camel: 'startDate', snake: 'start_date' },
+            { attr: 'custom-completion-time', camel: 'completionTime', snake: 'completion_time' },
+            { attr: 'custom-time', camel: 'customTime', snake: 'custom_time' },
+        ];
+        const blockIds = [];
+        list.forEach((task) => {
+            const taskId = String(task?.id || '').trim();
+            const hostId = String(task?.attrHostId || task?.attr_host_id || '').trim();
+            if (taskId) blockIds.push(taskId);
+            if (hostId && hostId !== taskId) blockIds.push(hostId);
+        });
+        const rows = await __tmQueryTaskMetaAttrRowsByBlockIds(blockIds);
+        if (!Array.isArray(rows) || !rows.length) {
+            return { changed: false, changedCount: 0 };
+        }
+        const rowMap = new Map();
+        rows.forEach((row) => {
+            const blockId = String(row?.block_id || '').trim();
+            const name = String(row?.name || '').trim();
+            if (!blockId || !name) return;
+            if (!rowMap.has(blockId)) rowMap.set(blockId, {});
+            rowMap.get(blockId)[name] = String(row?.value ?? '');
+        });
+        let changedCount = 0;
+        list.forEach((task) => {
+            const taskId = String(task?.id || '').trim();
+            if (!taskId) return;
+            const hostId = String(task?.attrHostId || task?.attr_host_id || taskId).trim() || taskId;
+            const taskRow = rowMap.get(taskId) || null;
+            const hostRow = hostId && hostId !== taskId ? rowMap.get(hostId) || null : null;
+            let patch = null;
+            visibleDateKeys.forEach((item) => {
+                const taskValue = String(taskRow?.[item.attr] ?? '').trim();
+                const hostValue = String(hostRow?.[item.attr] ?? '').trim();
+                const value = taskValue || hostValue;
+                if (!value) return;
+                if (String(task?.[item.camel] || '').trim() === value && String(task?.[item.snake] || '').trim() === value) return;
+                task[item.camel] = value;
+                task[item.snake] = value;
+                const flatTask = state.flatTasks?.[taskId];
+                if (flatTask && typeof flatTask === 'object') {
+                    flatTask[item.camel] = value;
+                    flatTask[item.snake] = value;
+                }
+                if (!patch) patch = {};
+                patch[item.camel] = value;
+            });
+            if (patch && Object.keys(patch).length) {
+                changedCount += 1;
+                try { MetaStore.set(taskId, patch); } catch (e) {}
+            }
+        });
+        return { changed: changedCount > 0, changedCount };
     }
 
     async function __tmSetDoneByIdStateless(id, done) {
@@ -2048,6 +2117,8 @@
                         priorityScore: taskRewardPriorityScore,
                         completedAt: String(completeAtPatch?.taskCompleteAt || '').trim(),
                         source: String(opts.source || 'set-done').trim() || 'set-done',
+                        previousDone: originalDone,
+                        nextDone: actualDone,
                     });
                 } catch (e) {}
             }
@@ -2190,16 +2261,7 @@
 
     window.tmSetDone = async function(id, done, ev, options = {}) {
         const opts = (options && typeof options === 'object') ? options : {};
-        try {
-            __tmPushRefreshDebug('tmSetDone:start', {
-                taskId: String(id || '').trim(),
-                nextDone: !!done,
-                source: String(opts.source || '').trim(),
-                viewMode: globalThis.__tmRuntimeState?.getViewMode?.('') || String(state.viewMode || '').trim(),
-                detailTaskId: String(state.detailTaskId || '').trim(),
-            });
-        } catch (e) {}
-        if (ev) {
+if (ev) {
             try { ev.stopPropagation(); } catch (e) {}
             try { ev.preventDefault(); } catch (e) {}
         }
@@ -2240,24 +2302,10 @@
             try { __tmRestoreChecklistRenderRestore(checklistLocalRestoreSnapshot); } catch (e) {}
             await request;
             try { __tmRestoreChecklistRenderRestore(checklistLocalRestoreSnapshot); } catch (e) {}
-            try {
-                __tmPushRefreshDebug('tmSetDone:success', {
-                    taskId: tid,
-                    nextDone: targetDone,
-                    detailTaskId: String(state.detailTaskId || '').trim(),
-                });
-            } catch (e) {}
-            if (targetDone) __tmQueueTaskDoneDelight(tid, { done: true, suppressHint: opts.suppressHint, source: opts.source });
+if (targetDone) __tmQueueTaskDoneDelight(tid, { done: true, suppressHint: opts.suppressHint, source: opts.source });
             if (opts.suppressHint === true) return true;
         } catch (e) {
-            try {
-                __tmPushRefreshDebug('tmSetDone:error', {
-                    taskId: tid,
-                    nextDone: targetDone,
-                    error: String(e?.message || e || ''),
-                });
-            } catch (e2) {}
-            hint(`❌ 操作失败: ${e.message}`, 'error');
+hint(`❌ 操作失败: ${e.message}`, 'error');
             if (ev?.target) ev.target.checked = !targetDone;
             try { __tmRestoreChecklistRenderRestore(checklistLocalRestoreSnapshot); } catch (e2) {}
         }
@@ -2313,20 +2361,7 @@
     // injectedTasks: 可选，Array<Task>，用于在SQL索引未更新时强制注入新任务（乐观更新）
     async function reloadDocTasksProtected(docId, expectId = null, manualRelationships = null, injectedTasks = null, options = {}) {
         const opts = (options && typeof options === 'object') ? options : {};
-        try {
-            __tmPushRefreshDebug('reload-doc-protected:start', {
-                docId: String(docId || '').trim(),
-                expectId: String(expectId || '').trim(),
-                manualRelationshipCount: manualRelationships instanceof Map ? manualRelationships.size : 0,
-                injectedTaskCount: Array.isArray(injectedTasks) ? injectedTasks.length : 0,
-                options: {
-                    applyFilters: opts.applyFilters !== false,
-                    render: opts.render !== false,
-                    saveMeta: opts.saveMeta !== false,
-                },
-            });
-        } catch (e) {}
-        // 0. 备份旧的父子关系/文档顺序（用于容灾，当SQL索引失效时恢复现有结构）
+// 0. 备份旧的父子关系/文档顺序（用于容灾，当SQL索引失效时恢复现有结构）
         const oldRelationships = new Map(); // Map<childId, {parentId: string, listId: string}>
         const oldTaskStateById = new Map(); // Map<taskId, {parentId: string, listId: string, docSeq?: number}>
         const backupRelationships = (tasks) => {
@@ -2428,14 +2463,7 @@
                     flatTasks.push(injected);
                 }
             });
-            try {
-                __tmPushRefreshDebug('reload-doc-protected:injected-merge', {
-                    docId: String(docId || '').trim(),
-                    injectedCount: injectedById.size,
-                    mergedCount,
-                });
-            } catch (e) {}
-        }
+}
 
         const protectedFlowRankMap = new Map();
         if (forceDocFlowOrder && flatTasks.length > 0) {
@@ -2716,15 +2744,7 @@
         if (opts.saveMeta !== false) {
             await MetaStore.saveNow();
         }
-        try {
-            __tmPushRefreshDebug('reload-doc-protected:end', {
-                docId: String(docId || '').trim(),
-                expectId: String(expectId || '').trim(),
-                rootTaskCount: Array.isArray(rootTasks) ? rootTasks.length : 0,
-                flatTaskCount: flatTasks.length,
-            });
-        } catch (e) {}
-    }
+}
 
     window.tmSetTaskPriority = async function(id, value, opts = {}) {
         const tid = String(id || '').trim();
@@ -2997,22 +3017,25 @@
         const isMulti = String(field.type || '').trim() === 'multi';
         const useChecklistLegacy = __tmShouldUseChecklistLegacyFieldCommit(options);
         __tmOpenInlineEditor(anchorEl, ({ editor, close }) => {
+            try { editor.classList.add('tm-custom-field-inline-editor'); } catch (e) {}
             const viewportWidth = Math.max(240, window.innerWidth || document.documentElement.clientWidth || 0);
-            const minEditorWidth = isMulti ? 112 : 96;
-            const maxEditorWidth = Math.max(minEditorWidth, Math.min(420, viewportWidth - 24));
+            const minEditorWidth = 88;
+            const maxEditorWidth = Math.max(minEditorWidth, Math.min(220, viewportWidth - 24));
             editor.style.minWidth = '0';
             editor.style.width = 'auto';
             editor.style.maxWidth = `${maxEditorWidth}px`;
-            editor.style.padding = '8px';
+            editor.style.padding = '6px';
             const wrap = document.createElement('div');
+            wrap.className = 'tm-custom-field-inline-wrap';
             wrap.style.display = 'inline-flex';
             wrap.style.flexDirection = 'column';
-            wrap.style.gap = '6px';
+            wrap.style.gap = '2px';
             wrap.style.alignItems = 'flex-start';
             wrap.style.width = 'auto';
             wrap.style.maxWidth = '100%';
 
             const title = document.createElement('div');
+            title.className = 'tm-custom-field-inline-title';
             title.style.fontSize = '12px';
             title.style.color = 'var(--tm-secondary-text)';
             title.style.maxWidth = '100%';
@@ -3023,10 +3046,11 @@
             wrap.appendChild(title);
 
             const list = document.createElement('div');
-            list.style.display = 'inline-flex';
+            list.className = 'tm-custom-field-inline-list';
+            list.style.display = 'flex';
             list.style.flexDirection = 'column';
-            list.style.gap = '4px';
-            list.style.alignItems = 'flex-start';
+            list.style.gap = '2px';
+            list.style.alignItems = 'stretch';
             list.style.width = 'auto';
             list.style.maxWidth = '100%';
             wrap.appendChild(list);
@@ -3035,11 +3059,19 @@
             const syncEditorWidth = () => {
                 try {
                     editor.style.width = 'auto';
+                    const optionWidth = Array.from(list.children || []).reduce((max, item) => {
+                        const chip = item instanceof HTMLElement ? item.querySelector('.tm-custom-field-inline-chip') : null;
+                        const width = Math.ceil((chip?.scrollWidth || item?.scrollWidth || 0) + 20);
+                        return Math.max(max, width);
+                    }, 0);
+                    const actionButtons = actions ? Array.from(actions.children || []).filter((item) => item instanceof HTMLElement) : [];
+                    const actionWidth = actionButtons.reduce((sum, item) => sum + Math.ceil(item.scrollWidth || 0), 0)
+                        + Math.max(0, actionButtons.length - 1) * 2;
                     const naturalWidth = Math.max(
                         minEditorWidth,
-                        Math.ceil(title.scrollWidth || 0),
-                        Math.ceil(list.scrollWidth || 0),
-                        Math.ceil(actions?.scrollWidth || 0)
+                        Math.ceil((title.scrollWidth || 0) + 8),
+                        optionWidth,
+                        actionWidth
                     );
                     editor.style.width = `${Math.min(maxEditorWidth, naturalWidth)}px`;
                 } catch (e) {}
@@ -3061,29 +3093,44 @@
                     const optionId = String(opt?.id || '').trim();
                     const button = document.createElement('button');
                     button.type = 'button';
-                    button.className = 'tm-status-option-btn';
+                    button.className = 'tm-status-option-btn tm-custom-field-inline-option';
                     button.style.fontSize = '12px';
                     button.style.textAlign = 'left';
-                    button.style.width = 'fit-content';
+                    button.style.width = '100%';
                     button.style.maxWidth = '100%';
                     button.setAttribute('data-selected', draft.has(optionId) ? 'true' : 'false');
                     const chip = document.createElement('span');
-                    chip.className = 'tm-status-tag';
+                    chip.className = 'tm-status-tag tm-custom-field-inline-chip';
                     chip.style.cssText = __tmBuildStatusChipStyle(opt?.color || '#9ca3af');
                     chip.textContent = String(opt?.name || optionId || '').trim() || optionId;
                     if (draft.has(optionId)) chip.textContent += isMulti ? '  ✓' : '';
                     button.appendChild(chip);
                     button.onclick = () => {
                         if (isMulti) {
-                            if (draft.has(optionId)) draft.delete(optionId);
-                            else draft.add(optionId);
-                            renderOptions();
+                            const nextDraft = new Set(draft);
+                            if (nextDraft.has(optionId)) nextDraft.delete(optionId);
+                            else if (optionId) nextDraft.add(optionId);
+                            void (async () => {
+                                try {
+                                    const ok = await __tmPersistTaskCustomFieldValue(tid, fid, Array.from(nextDraft), options);
+                                    if (ok === false) {
+                                        hint('❌ 更新失败', 'error');
+                                        return;
+                                    }
+                                    draft.clear();
+                                    nextDraft.forEach((value) => draft.add(value));
+                                    renderOptions();
+                                } catch (e) {
+                                    hint(`❌ 更新失败: ${e.message}`, 'error');
+                                }
+                            })();
                             return;
                         }
+                        const nextValue = draft.has(optionId) ? '' : optionId;
                         if (useChecklistLegacy) {
                             void (async () => {
                                 try {
-                                    await __tmPersistTaskCustomFieldValue(tid, fid, optionId, options);
+                                    await __tmPersistTaskCustomFieldValue(tid, fid, nextValue, options);
                                     close();
                                 } catch (e) {
                                     hint(`❌ 更新失败: ${e.message}`, 'error');
@@ -3092,7 +3139,7 @@
                             return;
                         }
                         close();
-                        void __tmPersistTaskCustomFieldValue(tid, fid, optionId, options);
+                        void __tmPersistTaskCustomFieldValue(tid, fid, nextValue, options);
                     };
                     list.appendChild(button);
                 });
@@ -3101,21 +3148,37 @@
             renderOptions();
 
             actions = document.createElement('div');
-            actions.className = 'tm-inline-editor-actions';
-            actions.style.display = 'inline-flex';
+            actions.className = 'tm-inline-editor-actions tm-custom-field-inline-actions';
+            actions.style.display = 'flex';
             actions.style.justifyContent = 'flex-start';
             actions.style.width = 'auto';
             actions.style.alignSelf = 'flex-start';
             const clearBtn = document.createElement('button');
             clearBtn.type = 'button';
-            clearBtn.className = 'tm-btn tm-btn-secondary';
-            clearBtn.style.padding = '6px 10px';
+            clearBtn.className = 'tm-btn tm-btn-secondary tm-custom-field-inline-action';
+            clearBtn.style.padding = '0 10px';
             clearBtn.textContent = '清空';
             clearBtn.onclick = () => {
+                if (isMulti) {
+                    void (async () => {
+                        try {
+                            const ok = await __tmPersistTaskCustomFieldValue(tid, fid, [], options);
+                            if (ok === false) {
+                                hint('❌ 更新失败', 'error');
+                                return;
+                            }
+                            draft.clear();
+                            renderOptions();
+                        } catch (e) {
+                            hint(`❌ 更新失败: ${e.message}`, 'error');
+                        }
+                    })();
+                    return;
+                }
                 if (useChecklistLegacy) {
                     void (async () => {
                         try {
-                            await __tmPersistTaskCustomFieldValue(tid, fid, isMulti ? [] : '', options);
+                            await __tmPersistTaskCustomFieldValue(tid, fid, '', options);
                             close();
                         } catch (e) {
                             hint(`❌ 更新失败: ${e.message}`, 'error');
@@ -3124,31 +3187,17 @@
                     return;
                 }
                 close();
-                void __tmPersistTaskCustomFieldValue(tid, fid, isMulti ? [] : '', options);
+                void __tmPersistTaskCustomFieldValue(tid, fid, '', options);
             };
             actions.appendChild(clearBtn);
             if (isMulti) {
-                const saveBtn = document.createElement('button');
-                saveBtn.type = 'button';
-                saveBtn.className = 'tm-btn tm-btn-primary';
-                saveBtn.style.padding = '6px 10px';
-                saveBtn.textContent = '确定';
-                saveBtn.onclick = () => {
-                    if (useChecklistLegacy) {
-                        void (async () => {
-                            try {
-                                await __tmPersistTaskCustomFieldValue(tid, fid, Array.from(draft), options);
-                                close();
-                            } catch (e) {
-                                hint(`❌ 更新失败: ${e.message}`, 'error');
-                            }
-                        })();
-                        return;
-                    }
-                    close();
-                    void __tmPersistTaskCustomFieldValue(tid, fid, Array.from(draft), options);
-                };
-                actions.appendChild(saveBtn);
+                const doneBtn = document.createElement('button');
+                doneBtn.type = 'button';
+                doneBtn.className = 'tm-btn tm-btn-primary tm-custom-field-inline-action';
+                doneBtn.style.padding = '0 10px';
+                doneBtn.textContent = '完成';
+                doneBtn.onclick = () => close();
+                actions.appendChild(doneBtn);
             }
             wrap.appendChild(actions);
             editor.appendChild(wrap);
@@ -4522,18 +4571,6 @@
             } catch (e) {}
         }));
 
-        try {
-            __tmPushRefreshDebug('task-sibling-ranks:resolved', {
-                directListCount: directListIds.size,
-                parentTaskCount: parentTaskIds.size,
-                preferDomDirectListCount,
-                preferDomParentTaskCount,
-                refreshedDirectListCount,
-                refreshedParentTaskCount,
-                rankCount: rankMap.size,
-                source: 'local-doc-scan+held-dom-refresh',
-            });
-        } catch (e) {}
         return rankMap;
     }
 
@@ -5644,15 +5681,6 @@
         try {
             const modifiedIds = Array.from(__tmModifiedTaskIds || []).map((id) => String(id || '').trim()).filter(Boolean);
             const pluginVisible = __tmIsPluginVisibleNow();
-            try {
-                __tmPushRefreshDebug('quickbar-auto-update:refresh-enter', {
-                    modifiedCount: modifiedIds.length,
-                    modifiedIds,
-                    pluginVisible,
-                    isRefreshing: state.isRefreshing === true,
-                    viewMode: globalThis.__tmRuntimeState?.getViewMode?.('') || String(state.viewMode || '').trim() || '',
-                });
-            } catch (e) {}
             if (pluginVisible) {
                 if (modifiedIds.length > 0) {
                     modifiedIds.forEach((taskId) => {
@@ -5673,41 +5701,16 @@
                         }
                     }
                 } catch (e) {}
-                try {
-                    __tmPushRefreshDebug('quickbar-auto-update:refresh-visible', {
-                        modifiedCount: modifiedIds.length,
-                        modifiedIds,
-                        rerenderedInPlace,
-                        detailPatchedCount: modifiedIds.length,
-                    });
-                } catch (e) {}
                 try { __tmModifiedTaskIds.clear(); } catch (e) {}
                 return;
             }
             // 不可见时再退回静默就地刷新，避免切回页面后数据过旧。
             if (state.isRefreshing) {
-                try {
-                    __tmPushRefreshDebug('quickbar-auto-update:refresh-hidden-busy', {
-                        modifiedCount: modifiedIds.length,
-                        modifiedIds,
-                    });
-                } catch (e) {}
                 setTimeout(() => { try { __tmSilentRefreshAfterQuickbarUpdate(); } catch (e) {} }, 500);
                 return;
             }
-            try {
-                __tmPushRefreshDebug('quickbar-auto-update:refresh-hidden', {
-                    modifiedCount: modifiedIds.length,
-                    modifiedIds,
-                });
-            } catch (e) {}
             __tmSilentRefreshAfterQuickbarUpdate();
         } catch (e) {
-            try {
-                __tmPushRefreshDebug('quickbar-auto-update:refresh-error', {
-                    error: String(e?.message || e || '').trim(),
-                });
-            } catch (e2) {}
             console.error('__taskHorizonRefresh error:', e);
         }
     };
@@ -5716,12 +5719,6 @@
     globalThis.__taskHorizonMarkModified = (taskId) => {
         if (taskId) {
             __tmModifiedTaskIds.add(String(taskId));
-            try {
-                __tmPushRefreshDebug('quickbar-auto-update:mark-modified-global', {
-                    taskId: String(taskId || '').trim(),
-                    modifiedCount: Number(__tmModifiedTaskIds?.size || 0),
-                });
-            } catch (e) {}
         }
     };
 
@@ -6664,25 +6661,6 @@
             perfDeferRecurringReconcile: perfTuning.deferRecurringReconcile ? 1 : 0,
         });
         const sourceLabel = String(options?.source || 'direct').trim() || 'direct';
-        try {
-            __tmPushRefreshDebug('load-selected:start', {
-                source: sourceLabel,
-                token,
-                skipRender,
-                showInlineLoading,
-                preferFastFirstPaint,
-                forceFreshTasks,
-                viewMode: getCurrentViewMode(''),
-            });
-        } catch (e) {}
-        try {
-            if (sourceLabel === 'openManager' || sourceLabel === 'openManager-soft-reuse') {
-                __tmStartStartupLagProbe(sourceLabel, {
-                    durationMs: 12000,
-                    longFrameMs: 42,
-                });
-            }
-        } catch (e) {}
         let perfFinished = false;
         const finishPerfTrace = (detail = {}) => {
             if (perfFinished) return;
@@ -7283,21 +7261,6 @@
                     perfMark = __tmPerfNow();
                     normalizeTaskFields(task, docName, normalizeTaskOptions);
                     normalizeMetrics.fieldsMs += (__tmPerfNow() - perfMark);
-                    const taskValueDebugIds = Array.from(new Set([
-                        taskId,
-                        String(task?.attrHostId || task?.attr_host_id || '').trim(),
-                        String(task?.parent_id || '').trim(),
-                    ].filter(Boolean)));
-                    if (__tmShouldLogValueDebug(taskValueDebugIds, false)) {
-                        __tmPushValueDebug('load:normalized-task', {
-                            taskId,
-                            parsedDone: correctDone,
-                            parsedMarker,
-                            queuedPatchKeys: queuedTaskFieldPatch ? Object.keys(queuedTaskFieldPatch) : [],
-                            prevTask: __tmSnapshotTaskValueDebugFields(prevTask),
-                            after: __tmSnapshotTaskValueDebugFields(task),
-                        }, taskValueDebugIds);
-                    }
 
                     const hasResolvedH2 = !!taskId && h2ContextMap.has(taskId);
                     const h2ctx = hasResolvedH2 ? h2ContextMap.get(taskId) : undefined;
@@ -7373,13 +7336,6 @@
                     }
                     tasksByDoc.get(task.root_id).push(task);
                     nextFlatTasks[task.id] = task;
-                    if (__tmShouldLogValueDebug(taskValueDebugIds, false)) {
-                        __tmPushValueDebug('load:flat-commit', {
-                            taskId,
-                            docId: String(task.root_id || '').trim(),
-                            task: __tmSnapshotTaskValueDebugFields(task),
-                        }, taskValueDebugIds);
-                    }
                     perfMark = __tmPerfNow();
                     const repeatHistory = Array.isArray(task.repeatHistory) ? task.repeatHistory : [];
                     if (repeatHistory.length > 0) {
@@ -7489,7 +7445,6 @@
                     parentLinkStats.missingParentInDocCount += Number(stats.missingParentInDocCount || 0);
                 });
                 __tmPerfTraceMark(perfTrace, 'parent-link', parentLinkStats);
-                try { __tmPushRefreshDebug('parent-link:resolved', parentLinkStats); } catch (e) {}
                 let siblingOrderRanks = new Map();
                 const siblingRankStartTime = Date.now();
                 try {
@@ -7594,6 +7549,13 @@
                     parentLinkQueryCalls: Number(parentLinkStats?.queryCalls || 0),
                     parentLinkResolved: Number(parentLinkStats?.resolvedCount || 0),
                 });
+
+                try {
+                    const hydrateSourceTasks = Object.values(state.flatTasks || {}).filter((task) => task && typeof task === 'object');
+                    await __tmHydrateChecklistVisibleDateAttrs(hydrateSourceTasks, {
+                        reason: 'load-selected-before-filter',
+                    });
+                } catch (e) {}
 
                 applyFilters();
                 if (loadBudget.enabled) {

@@ -1123,6 +1123,40 @@
         }
     }
 
+    function __tmMarkNativeDocCheckboxInsertedBlocks(blockIds, ttlMs = 5000) {
+        const ids = Array.from(new Set((Array.isArray(blockIds) ? blockIds : [blockIds]).map((item) => String(item || '').trim()).filter(Boolean)));
+        if (!ids.length) return;
+        const until = Date.now() + Math.max(500, Number(ttlMs) || 5000);
+        try {
+            ids.forEach((rawId) => {
+                __tmNativeDocCheckboxInsertedBlockMap.set(rawId, until);
+            });
+        } catch (e) {}
+    }
+
+    function __tmConsumeNativeDocCheckboxInsertedBlock(blockId) {
+        const rawId = String(blockId || '').trim();
+        if (!rawId) return false;
+        try {
+            const until = Number(__tmNativeDocCheckboxInsertedBlockMap.get(rawId) || 0);
+            if (!until) return false;
+            __tmNativeDocCheckboxInsertedBlockMap.delete(rawId);
+            return until >= Date.now();
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function __tmIsNativeDocTaskBlockInsertionElement(el) {
+        if (!(el instanceof Element)) return false;
+        try {
+            if (el.matches?.('[data-type="NodeListItem"], .li[data-node-id]')) return true;
+            return !!el.querySelector?.('[data-type="NodeListItem"], .li[data-node-id]');
+        } catch (e) {
+            return false;
+        }
+    }
+
     function __tmMirrorDocCheckboxStatusPatch(taskId, patch) {
         const tid = String(taskId || '').trim();
         if (!tid || !patch || typeof patch !== 'object') return;
@@ -1296,6 +1330,7 @@
         try { taskId = await __tmResolveTaskIdFromAnyBlockId(rawId); } catch (e) { taskId = ''; }
         const tid = String(taskId || rawId || '').trim();
         if (!tid) return false;
+        const insertedSync = __tmConsumeNativeDocCheckboxInsertedBlock(rawId) || __tmConsumeNativeDocCheckboxInsertedBlock(tid);
 
         let task = null;
         try {
@@ -1319,6 +1354,7 @@
             currentDone: !!task.done,
             domDone: !!domDone,
             syncVersion,
+            insertedSync,
         }, [rawId, tid, __tmGetTaskAttrHostId(task)], { force: true });
 
         const statusOptions = Array.isArray(SettingsStore?.data?.customStatusOptions) ? SettingsStore.data.customStatusOptions : [];
@@ -1326,10 +1362,8 @@
         const currentStatus = String(task.customStatus || '').trim();
         const currentTaskCompleteAt = String(task.taskCompleteAt || task.task_complete_at || '').trim();
         const taskDoneBefore = !!task.done;
-        const shouldDispatchTaskReward = !!SettingsStore?.data?.enablePointsRewardIntegration && !taskDoneBefore && !!domDone && !__tmUndoState?.applying;
-        const taskRewardPriorityScore = shouldDispatchTaskReward
-            ? Math.max(0, Math.round(Number(__tmEnsureTaskPriorityScore(task, { force: true })) || 0))
-            : 0;
+        const currentStatusDoneBefore = currentStatus ? __tmDoesStatusIdResolveToDone(currentStatus, statusOptions) : false;
+        const effectiveTaskDoneBefore = taskDoneBefore || currentStatusDoneBefore;
         const ignoredSync = __tmConsumeNativeDocCheckboxStatusSyncIgnore(rawId, !!domDone);
         if (ignoredSync) {
             const preservedStatus = String(ignoredSync.expectedStatus || currentStatus || '').trim();
@@ -1366,6 +1400,15 @@
         const persistedAttrsBefore = await __tmReadDocCheckboxBlockAttrs(tid);
         const persistedStatusBefore = String(persistedAttrsBefore?.status || '').trim();
         const persistedTaskCompleteAtBefore = String(persistedAttrsBefore?.taskCompleteAt || '').trim();
+        const persistedStatusDoneBefore = persistedStatusBefore ? __tmDoesStatusIdResolveToDone(persistedStatusBefore, statusOptions) : false;
+        const persistedDoneBefore = persistedStatusBefore
+            ? persistedStatusDoneBefore
+            : (!!domDone && !!persistedTaskCompleteAtBefore);
+        const wasDoneBefore = effectiveTaskDoneBefore || persistedDoneBefore;
+        const shouldDispatchTaskReward = !!SettingsStore?.data?.enablePointsRewardIntegration && !insertedSync && !wasDoneBefore && !!domDone && !__tmUndoState?.applying;
+        const taskRewardPriorityScore = shouldDispatchTaskReward
+            ? Math.max(0, Math.round(Number(__tmEnsureTaskPriorityScore(task, { force: true })) || 0))
+            : 0;
         const shouldApplyExpectedStatus = __tmShouldApplyUndoneStatusFallback(task, expectedStatus, currentStatus, persistedStatusBefore, statusOptions, !!domDone);
         const targetStatus = String(shouldApplyExpectedStatus ? expectedStatus : (persistedStatusBefore || currentStatus || '')).trim();
         __tmPushStatusDebug('checkbox-sync:decision', {
@@ -1378,6 +1421,11 @@
             shouldApplyExpectedStatus,
             targetStatus,
             taskDoneBefore,
+            currentStatusDoneBefore,
+            persistedStatusDoneBefore,
+            persistedDoneBefore,
+            wasDoneBefore,
+            insertedSync,
             currentTaskCompleteAt,
             persistedTaskCompleteAtBefore,
         }, [rawId, tid, __tmGetTaskAttrHostId(task)], { force: true });
@@ -1438,6 +1486,8 @@
                         priorityScore: taskRewardPriorityScore,
                         completedAt: resolvedTaskCompleteAt || __tmNowInChinaTimezoneIso(),
                         source: 'native-doc-checkbox-sync',
+                        previousDone: false,
+                        nextDone: true,
                     });
                 } catch (e) {}
             }
@@ -1539,6 +1589,8 @@
                     priorityScore: taskRewardPriorityScore,
                     completedAt: finalTaskCompleteAt || __tmNowInChinaTimezoneIso(),
                     source: 'native-doc-checkbox-sync',
+                    previousDone: false,
+                    nextDone: true,
                 });
             } catch (e) {}
         }
@@ -1644,9 +1696,13 @@
         try {
             __tmNativeDocCheckboxSyncObserver = new MutationObserver((mutations) => {
                 const touched = new Set();
-                const collect = (target) => {
+                const inserted = new Set();
+                const collect = (target, options = {}) => {
                     const blockId = __tmResolveNativeDocTaskBlockId(target);
-                    if (blockId) touched.add(blockId);
+                    if (blockId) {
+                        touched.add(blockId);
+                        if (options?.inserted === true) inserted.add(blockId);
+                    }
                 };
                 (Array.isArray(mutations) ? mutations : []).forEach((mutation) => {
                     const target = mutation?.target;
@@ -1683,12 +1739,13 @@
                                 const iconDone = __tmReadNativeDocCheckboxIconDoneState(useEl);
                                 const hasCheckboxInput = !!(el?.matches?.('input[type="checkbox"]') || el?.querySelector?.('input[type="checkbox"]'));
                                 if (iconDone !== null || hasCheckboxInput) {
-                                    collect(el);
+                                    collect(el, { inserted: __tmIsNativeDocTaskBlockInsertionElement(el) });
                                 }
                             });
                         } catch (e) {}
                     }
                 });
+                inserted.forEach((blockId) => __tmMarkNativeDocCheckboxInsertedBlocks(blockId));
                 touched.forEach((blockId) => __tmScheduleNativeDocCheckboxStatusSync(blockId));
             });
             __tmNativeDocCheckboxSyncObserver.observe(document.body, {

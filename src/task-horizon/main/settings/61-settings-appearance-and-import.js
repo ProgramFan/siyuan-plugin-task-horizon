@@ -32,39 +32,6 @@
         hint(ok ? '✅ 诊断信息已复制' : '❌ 复制失败，请手动展开 JSON 复制', ok ? 'success' : 'error');
         return ok;
     };
-    window.tmToggleRefreshDebugLog = async function(enabled) {
-        const nextEnabled = enabled === true;
-        SettingsStore.data.refreshDebugLogEnabled = nextEnabled;
-        try { __tmApplyRefreshDebugLogSettingToRuntime(nextEnabled); } catch (e) {}
-        try { SettingsStore.syncToLocal(); } catch (e) {}
-        let saved = true;
-        try {
-            await SettingsStore.save();
-        } catch (e) {
-            saved = false;
-        }
-        if (state.settingsModal && document.body.contains(state.settingsModal) && state.settingsActiveTab === 'about') {
-            showSettings();
-        }
-        hint(
-            saved
-                ? (nextEnabled ? '✅ 已开启后台调试日志' : '✅ 已关闭后台调试日志')
-                : (nextEnabled ? '⚠️ 已本地开启后台调试日志，但保存失败' : '⚠️ 已本地关闭后台调试日志，但保存失败'),
-            saved ? 'success' : 'warning'
-        );
-        return {
-            ok: saved,
-            enabled: nextEnabled,
-        };
-    };
-    window.tmClearRefreshDebugLog = function() {
-        const result = __tmClearDebugChannel('refresh');
-        if (state.settingsModal && document.body.contains(state.settingsModal) && state.settingsActiveTab === 'about') {
-            showSettings();
-        }
-        hint('✅ 已清空后台调试日志缓存', 'success');
-        return result;
-    };
     window.tmSwitchSettingsTab = function(tab) {
         const prev = state.settingsActiveTab || 'docs';
         if (tab === 'main') {

@@ -651,17 +651,6 @@
             const source = String(next.source || 'quickbar').trim() || 'quickbar';
             if (!taskId) return false;
             try {
-                __tmPushRefreshDebug('quickbar-bridge:notify', {
-                    taskId,
-                    requestedTaskId,
-                    attrHostId,
-                    attrKey,
-                    source,
-                    pluginVisible: __tmIsPluginVisibleNow(),
-                    viewMode: String(state.viewMode || '').trim() || '',
-                });
-            } catch (e) {}
-            try {
                 window.dispatchEvent(new CustomEvent('tm-task-attr-updated', {
                     detail: {
                         taskId,
@@ -694,23 +683,7 @@
             }
             try { __tmMarkQuickbarModifiedTask(taskId); } catch (e) {}
             try { globalThis.__taskHorizonMarkModified?.(taskId); } catch (e) {}
-            try {
-                __tmPushRefreshDebug('quickbar-bridge:refresh-scheduled', {
-                    taskId,
-                    attrHostId: attrHostId || taskId,
-                    attrKey,
-                    source,
-                });
-            } catch (e) {}
             setTimeout(() => {
-                try {
-                    __tmPushRefreshDebug('quickbar-bridge:refresh-fire', {
-                        taskId,
-                        attrHostId: attrHostId || taskId,
-                        attrKey,
-                        source,
-                    });
-                } catch (e) {}
                 try { globalThis.__taskHorizonRefresh?.(); } catch (e) {}
             }, 0);
             return true;
@@ -724,9 +697,6 @@
         },
         refresh() {
             try { globalThis.__taskHorizonRefresh?.(); return true; } catch (e) { return false; }
-        },
-        isRefreshDebugEnabled() {
-            return __tmDebugChannels.refresh.enabled === true;
         }
     };
     __tmNs.getTaskStatusDisplayByAnyId = __tmGetTaskStatusDisplayByAnyId;

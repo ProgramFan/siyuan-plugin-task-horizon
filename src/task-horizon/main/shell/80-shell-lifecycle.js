@@ -48,23 +48,7 @@
                         relaySeq,
                     });
                 } catch (e2) {}
-                try {
-                    __tmPushRefreshDebug('quickbar-auto-update:received', {
-                        taskId,
-                        requestedTaskId,
-                        attrHostId,
-                        attrKey,
-                        attrValue,
-                        source,
-                        pluginVisible,
-                        relayTransport,
-                        relaySource,
-                        relaySeq,
-                        relayTime,
-                        viewMode: globalThis.__tmRuntimeState?.getViewMode?.('') || String(state.viewMode || '').trim() || '',
-                    });
-                } catch (e2) {}
-                if (__tmIsVisibleDateAttrKey(attrKey)) {
+if (__tmIsVisibleDateAttrKey(attrKey)) {
                     __tmMarkVisibleDateFallbackTask(taskId);
                 }
                 let handledInline = false;
@@ -79,77 +63,23 @@
                             .then((resolvedTaskId) => {
                                 const nextTaskId = String(resolvedTaskId || '').trim();
                                 if (!nextTaskId || nextTaskId === taskId) {
-                                    try {
-                                        __tmPushRefreshDebug('quickbar-auto-update:resolve-skip', {
-                                            taskId,
-                                            resolvedTaskId: nextTaskId,
-                                            attrKey,
-                                            source,
-                                        });
-                                    } catch (e) {}
-                                    return;
+return;
                                 }
                                 const resolvedHandledInline = !!__tmChangeFeed.handleAttrUpdate(nextTaskId, attrKey, attrValue, {
                                     reason: 'quickbar-attr-update',
                                 });
                                 handledInline = resolvedHandledInline || handledInline;
-                                try {
-                                    __tmPushRefreshDebug('quickbar-auto-update:resolve-result', {
-                                        taskId,
-                                        resolvedTaskId: nextTaskId,
-                                        attrKey,
-                                        attrValue,
-                                        source,
-                                        handledInline: resolvedHandledInline,
-                                    });
-                                } catch (e) {}
-                            })
+})
                             .catch((error) => {
-                                try {
-                                    __tmPushRefreshDebug('quickbar-auto-update:resolve-error', {
-                                        taskId,
-                                        attrKey,
-                                        source,
-                                        error: String(error?.message || error || '').trim(),
-                                    });
-                                } catch (e) {}
-                                return null;
+return null;
                             });
                     }
                 }
                 const shouldDeferToAutoRefresh = __tmChangeFeed.shouldDeferToAutoRefresh(taskId, attrKey, attrValue);
                 const shouldMarkDirty = !handledInline || shouldDeferToAutoRefresh;
-                try {
-                    __tmPushRefreshDebug('quickbar-auto-update:decision', {
-                        taskId,
-                        requestedTaskId,
-                        attrHostId,
-                        attrKey,
-                        source,
-                        handledInline,
-                        shouldDeferToAutoRefresh,
-                        shouldMarkDirty,
-                        relayTransport,
-                        relaySeq,
-                        resolveRetryScheduled,
-                    });
-                } catch (e2) {}
-                if (shouldMarkDirty) {
+if (shouldMarkDirty) {
                     __tmMarkQuickbarModifiedTask(taskId);
-                    try {
-                        __tmPushRefreshDebug('quickbar-auto-update:mark-dirty', {
-                            taskId,
-                            requestedTaskId,
-                            attrHostId,
-                            attrKey,
-                            source,
-                            reason: !handledInline ? 'inline-not-applied' : 'projection-refresh-needed',
-                            relayTransport,
-                            relaySeq,
-                            resolveRetryScheduled,
-                        });
-                    } catch (e2) {}
-                }
+}
                 if (attrKey === 'bookmark') {
                     try { __tmClearReminderSnapshotCache(taskId); } catch (ex) {}
                     try { __tmSetTaskReminderMark(taskId, attrValue.includes('⏰')); } catch (ex) {}
@@ -607,19 +537,6 @@
         if (canSkipRenderOnReuse) {
             try { __tmScheduleReminderTaskNameMarksRefresh(state.modal, true); } catch (e) {}
             try {
-                __tmGetValueDebugWatchTaskIds().forEach((taskId) => {
-                    const currentTask = (state.flatTasks && typeof state.flatTasks === 'object')
-                        ? (globalThis.__tmRuntimeState?.getFlatTaskById?.(taskId) || state.flatTasks[taskId] || null)
-                        : null;
-                    __tmPushValueDebug('open:soft-reuse-visible-state', {
-                        taskId,
-                        token,
-                        reusedExistingModal: true,
-                        task: __tmSnapshotTaskValueDebugFields(currentTask),
-                    }, [taskId]);
-                });
-            } catch (e) {}
-            try {
                 if ((globalThis.__tmRuntimeState?.isViewMode?.('calendar') ?? String(state.viewMode || '').trim() === 'calendar')
                     && (globalThis.__tmCalendar?.requestRefresh || globalThis.__tmCalendar?.refreshInPlace)) {
                     __tmRequestCalendarRefresh({
@@ -725,7 +642,6 @@
     // 插件卸载清理
     function __tmCleanup() {
         try { globalThis.__tmHomepage?.unmount?.(); } catch (e) {}
-        try { __tmStopStartupLagProbe('cleanup'); } catch (e) {}
         try {
             if (__tmModalStackEscHandler) {
                 globalThis.__tmRuntimeEvents?.off?.(document, 'keydown', __tmModalStackEscHandler, true);
@@ -796,6 +712,7 @@
             });
             __tmNativeDocCheckboxReconcileTimers.clear();
             __tmNativeDocCheckboxReconcileVersions.clear();
+            __tmNativeDocCheckboxInsertedBlockMap.clear();
             __tmNativeDocCheckboxSyncQueue.length = 0;
             __tmNativeDocCheckboxSyncQueueRunning = false;
             __tmNativeDocCheckboxBatchSeq = 0;

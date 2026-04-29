@@ -146,8 +146,7 @@
                 ? state.modal.querySelector(`#tmTaskTable tbody tr[data-id="${CSS.escape(id)}"]`)
                 : null);
         if (!(row instanceof HTMLElement)) {
-            try { __tmPushRefreshDebug('list-time-patch', { taskId: id, ok: false, reason: 'row-missing' }); } catch (e) {}
-            return false;
+return false;
         }
         if (!task) return false;
         let touched = false;
@@ -172,16 +171,7 @@
         const remainingHtml = __tmRenderTaskRemainingTimeInfoHtml(remainingInfo);
         setCell('remainingTime', remainingHtml, { html: true, title: remainingLabel });
         const ok = touched || !sawNode;
-        try {
-            __tmPushRefreshDebug('list-time-patch', {
-                taskId: id,
-                ok,
-                reason: ok ? (touched ? 'patched' : 'no-visible-time-nodes') : 'node-missing',
-                sawNode,
-                touched,
-            });
-        } catch (e) {}
-        return ok;
+return ok;
     }
 
     function __tmUpdateChecklistTaskTimeInDOM(taskId, itemEl = null, taskLike = null) {
@@ -203,6 +193,10 @@
         const enabledCompactFields = (!!SettingsStore?.data?.checklistCompactMode)
             ? (globalThis.__tmViewPolicy?.getCompactChecklistMetaFieldSetForCurrentHost?.() || new Set(__tmGetCompactChecklistMetaFieldsForCurrentHost()))
             : null;
+        const taskStartDateValue = String(task?.startDate || task?.start_date || '').trim();
+        const taskCompletionTimeValue = String(task?.completionTime || task?.completion_time || '').trim();
+        if (taskStartDateValue && !String(task?.startDate || '').trim()) task.startDate = taskStartDateValue;
+        if (taskCompletionTimeValue && !String(task?.completionTime || '').trim()) task.completionTime = taskCompletionTimeValue;
         let touched = false;
         let sawNode = false;
         let valid = true;
@@ -233,18 +227,18 @@
             });
             return true;
         };
-        const completionText = __tmFormatTaskTime(task.completionTime);
+        const completionText = __tmFormatTaskTime(taskCompletionTimeValue);
         const durationText = String(task.duration || '').trim();
-        const compactStartText = __tmFormatTaskTimeCompact(task.startDate);
-        const compactCompletionText = __tmFormatTaskTimeCompact(task.completionTime);
+        const compactStartText = __tmFormatTaskTimeCompact(taskStartDateValue);
+        const compactCompletionText = __tmFormatTaskTimeCompact(taskCompletionTimeValue);
         const compactRemainingText = String(__tmGetTaskRemainingTimeLabel(task) || '').trim();
         const compactDurationText = String(task.duration || '').trim();
 
-        if (!syncNode('completionTime', esc(completionText), { html: true, shouldExist: !!task.completionTime })) valid = false;
+        if (!syncNode('completionTime', esc(completionText), { html: true, shouldExist: !!taskCompletionTimeValue })) valid = false;
         if (!syncNode('duration', `${__tmRenderLucideIcon('timer')} ${esc(durationText)}`, { html: true, shouldExist: !!durationText })) valid = false;
         if (!syncNode('startDateCompact', compactStartText, { shouldExist: !!compactStartText })) valid = false;
         if (!syncNode('completionTimeCompact', compactCompletionText, { shouldExist: !!compactCompletionText })) valid = false;
-        if (!syncNode('remainingTimeCompact', compactRemainingText, { shouldExist: !!compactRemainingText && !!(String(task?.startDate || '').trim() || String(task?.completionTime || '').trim()) })) valid = false;
+        if (!syncNode('remainingTimeCompact', compactRemainingText, { shouldExist: !!compactRemainingText && !!(taskStartDateValue || taskCompletionTimeValue) })) valid = false;
         if (!syncNode('durationCompact', compactDurationText, { shouldExist: !!compactDurationText })) valid = false;
         __tmSyncChecklistMetaContainerVisibility(item);
         return valid && (touched || !sawNode);
@@ -299,11 +293,7 @@
                 String(task0?.root_id || '').trim(),
                 String(task0?.docId || '').trim(),
             ]);
-            __tmPushRefreshDebug('local-time-tx-mark', {
-                taskId: tid,
-                suppressIds,
-                docIds: [String(task0?.root_id || '').trim(), String(task0?.docId || '').trim()].filter(Boolean),
-            });
+            
         } catch (e) {}
         const datePatch = {};
         const metaPatch = {};
@@ -380,21 +370,7 @@
         }
 
         try { refreshed = !!__tmRefreshVisibleTaskDetailForTask(tid) || refreshed; } catch (e) {}
-        try {
-            __tmPushRefreshDebug('task-time-local-refresh-result', {
-                taskId: tid,
-                viewMode,
-                patch: { ...patch },
-                refreshed,
-                shouldFallback,
-                hasCalendarDatePatch,
-                currentRule: !!state.currentRule,
-                groupByTime: !!state.groupByTime,
-                quadrantEnabled: !!state.quadrantEnabled,
-            });
-        } catch (e) {}
-
-        if (hasCalendarDatePatch && globalThis.__tmCalendar?.syncTaskDateInPlace) {
+if (hasCalendarDatePatch && globalThis.__tmCalendar?.syncTaskDateInPlace) {
             Promise.resolve().then(async () => {
                 const isCalendarView = viewMode === 'calendar';
                 const syncResult = await globalThis.__tmCalendar.syncTaskDateInPlace(tid, {
@@ -411,14 +387,7 @@
                     }, { hard: false });
                     return;
                 }
-                try {
-                    __tmPushRefreshDebug('task-time-calendar-sync-result', {
-                        taskId: tid,
-                        isCalendarView,
-                        syncResult: { ...syncResult },
-                    });
-                } catch (e) {}
-                if ((syncResult.needsMainRefresh && isCalendarView) || syncResult.needsSideRefresh) {
+if ((syncResult.needsMainRefresh && isCalendarView) || syncResult.needsSideRefresh) {
                     __tmRequestCalendarRefresh({
                         reason: String(opts.reason || 'task-time-calendar-fallback').trim() || 'task-time-calendar-fallback',
                         main: isCalendarView && syncResult.needsMainRefresh,

@@ -772,18 +772,7 @@
         if (!requestedId) throw new Error('缺少任务 ID');
         const nextPatch = (patch && typeof patch === 'object') ? patch : {};
         const opts = (options && typeof options === 'object') ? options : {};
-        try {
-            __tmPushRefreshDebug('tmUpdateTaskDates-start', {
-                taskId: requestedId,
-                patch: { ...nextPatch },
-                options: {
-                    source: String(opts.source || '').trim(),
-                    refresh: opts.refresh !== false,
-                    hard: opts.hard === true,
-                },
-            });
-        } catch (e) {}
-        const hasStartDate = Object.prototype.hasOwnProperty.call(nextPatch, 'startDate');
+const hasStartDate = Object.prototype.hasOwnProperty.call(nextPatch, 'startDate');
         const hasCompletionTime = Object.prototype.hasOwnProperty.call(nextPatch, 'completionTime');
         if (!hasStartDate && !hasCompletionTime) throw new Error('缺少日期字段');
         let resolvedId = requestedId;
@@ -807,7 +796,9 @@
             try { task = await __tmBuildTaskLikeFromBlockId(requestedId); } catch (e) { task = null; }
         }
         const persistId = String(task?.id || resolvedId || requestedId).trim();
-        if (!persistId) throw new Error('未找到任务');
+        if (!persistId) {
+            throw new Error('未找到任务');
+        }
 
         const normalizeDate = (value) => {
             const raw = String(value || '').trim();
@@ -841,20 +832,24 @@
             });
         }
         const refreshReason = String(opts.source || 'calendar-dates').trim() || 'calendar-dates';
-        await __tmApplyTaskMetaPatchWithUndo(persistId, attrPatch, {
-            source: refreshReason,
-            label: __tmBuildUndoLabelFromMetaPatch(attrPatch, '日期'),
-            refresh: false,
-            refreshCalendar: false,
-            withFilters: false,
-            skipNoopCheck: opts.skipNoopCheck === true,
-            hard: opts.hard === true,
-            broadcast: opts.broadcast !== false,
-            queued: opts.queued === true,
-            background: opts.background === true,
-            skipFlush: opts.skipFlush,
-            renderOptimistic: opts.renderOptimistic !== false,
-        });
+        try {
+            await __tmApplyTaskMetaPatchWithUndo(persistId, attrPatch, {
+                source: refreshReason,
+                label: __tmBuildUndoLabelFromMetaPatch(attrPatch, '日期'),
+                refresh: false,
+                refreshCalendar: false,
+                withFilters: false,
+                skipNoopCheck: opts.skipNoopCheck === true,
+                hard: opts.hard === true,
+                broadcast: opts.broadcast !== false,
+                queued: opts.queued === true,
+                background: opts.background === true,
+                skipFlush: opts.skipFlush,
+                renderOptimistic: opts.renderOptimistic !== false,
+            });
+        } catch (e) {
+            throw e;
+        }
         if (opts.refresh !== false) {
             const viewPatch = {};
             if (hasStartDate) viewPatch.startDate = nextStart;
@@ -897,15 +892,7 @@
                 }
             } catch (e) {}
         }
-        try {
-            __tmPushRefreshDebug('tmUpdateTaskDates-end', {
-                taskId: persistId,
-                startDate: nextStart,
-                completionTime: nextEnd,
-                source: String(opts.source || '').trim(),
-            });
-        } catch (e) {}
-        return {
+return {
             id: persistId,
             startDate: nextStart,
             completionTime: nextEnd,

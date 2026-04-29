@@ -614,16 +614,7 @@
         const preserveUi = opt.preserveUi !== false;
         if (state.isRefreshing) return false;
         const startedAt = __tmPerfNow();
-        try {
-            __tmPushRefreshDebug('refresh-core:start', {
-                reason,
-                silent,
-                preserveUi,
-                viewMode: String(state.viewMode || '').trim() || '',
-            });
-        } catch (e) {}
-
-        state.openToken = (Number(state.openToken) || 0) + 1;
+state.openToken = (Number(state.openToken) || 0) + 1;
         const refreshToken = Number(state.openToken) || 0;
         const snapshot = preserveUi ? __tmCaptureRefreshUiState() : null;
         const mode = String(state.viewMode || '').trim();
@@ -719,33 +710,13 @@
                 const syncedLabel = syncedServerState ? '，已同步伺服共享配置' : '';
                 hint(removedCount > 0 ? `✅ 刷新完成${syncedLabel}，已清理冻结任务 ${removedCount} 项` : `✅ 刷新完成${syncedLabel}`, 'success');
             }
-            try {
-                __tmPushRefreshDebug('refresh-core:end', {
-                    reason,
-                    ok: true,
-                    silent,
-                    preserveUi,
-                    durationMs: __tmRoundPerfMs(__tmPerfNow() - startedAt),
-                    removedCount,
-                });
-            } catch (e) {}
-            return true;
+return true;
         } catch (e) {
             if (!silent) {
                 __tmRemoveHint(_refreshHint);
                 hint(`❌ 刷新失败: ${e.message}`, 'error');
             }
-            try {
-                __tmPushRefreshDebug('refresh-core:end', {
-                    reason,
-                    ok: false,
-                    silent,
-                    preserveUi,
-                    durationMs: __tmRoundPerfMs(__tmPerfNow() - startedAt),
-                    error: String(e?.message || e || ''),
-                });
-            } catch (e2) {}
-            return false;
+return false;
         } finally {
             state.isRefreshing = false;
             try { __tmSetInlineLoading(false); } catch (e) {}

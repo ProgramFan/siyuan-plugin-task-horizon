@@ -669,10 +669,18 @@
                                 '控制 Dock 侧边栏、移动端清单紧凑视图，以及日历视图侧边栏任务清单里任务右侧显示哪些信息。默认显示截止日期和状态标签。',
                                 (() => {
                                     const selected = new Set(__tmNormalizeCompactChecklistMetaFields(SettingsStore.data.dockChecklistCompactMetaFields));
-                                    return `<div style="display:flex;gap:8px;flex-wrap:wrap;">${__TM_CHECKLIST_COMPACT_META_FIELD_OPTIONS.map((item) => `
+                                    const customFieldOptions = __tmGetCustomFieldDefs()
+                                        .filter((field) => String(field?.id || '').trim() && field?.enabled !== false && String(field?.type || '').trim() !== 'text')
+                                        .map((field) => ({
+                                            key: `customField:${String(field?.id || '').trim()}`,
+                                            label: `自定义：${String(field?.name || field?.id || '').trim() || '未命名'}`
+                                        }))
+                                        .filter((item) => __tmParseCustomFieldColumnKey(item.key));
+                                    const options = __TM_CHECKLIST_COMPACT_META_FIELD_OPTIONS.concat(customFieldOptions);
+                                    return `<div style="display:flex;gap:8px;flex-wrap:wrap;">${options.map((item) => `
                                         <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--tm-border-color);border-radius:999px;background:var(--tm-card-bg);cursor:pointer;">
                                             <input class="b3-switch fn__flex-center" type="checkbox" ${selected.has(item.key) ? 'checked' : ''} onchange="updateChecklistCompactMetaFieldVisibility('dock', '${item.key}', this.checked)">
-                                            <span>${item.label}</span>
+                                            <span>${esc(item.label)}</span>
                                         </label>
                                     `).join('')}</div>`;
                                 })()
@@ -683,10 +691,18 @@
                             '控制桌面端清单紧凑视图里任务右侧显示哪些信息。默认显示截止日期和状态标签，文档名仅在全部页签下显示。',
                             (() => {
                                 const selected = new Set(__tmNormalizeCompactChecklistMetaFields(SettingsStore.data.desktopChecklistCompactMetaFields));
-                                return `<div style="display:flex;gap:8px;flex-wrap:wrap;">${__TM_CHECKLIST_COMPACT_META_FIELD_OPTIONS.map((item) => `
+                                const customFieldOptions = __tmGetCustomFieldDefs()
+                                    .filter((field) => String(field?.id || '').trim() && field?.enabled !== false && String(field?.type || '').trim() !== 'text')
+                                    .map((field) => ({
+                                        key: `customField:${String(field?.id || '').trim()}`,
+                                        label: `自定义：${String(field?.name || field?.id || '').trim() || '未命名'}`
+                                    }))
+                                    .filter((item) => __tmParseCustomFieldColumnKey(item.key));
+                                const options = __TM_CHECKLIST_COMPACT_META_FIELD_OPTIONS.concat(customFieldOptions);
+                                return `<div style="display:flex;gap:8px;flex-wrap:wrap;">${options.map((item) => `
                                     <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--tm-border-color);border-radius:999px;background:var(--tm-card-bg);cursor:pointer;">
                                         <input class="b3-switch fn__flex-center" type="checkbox" ${selected.has(item.key) ? 'checked' : ''} onchange="updateChecklistCompactMetaFieldVisibility('desktop', '${item.key}', this.checked)">
-                                        <span>${item.label}</span>
+                                        <span>${esc(item.label)}</span>
                                     </label>
                                 `).join('')}</div>`;
                             })(),
@@ -978,21 +994,31 @@
                                 '悬浮条显示图标',
                                 '控制任务悬浮条里显示哪些字段和动作图标；取消勾选后对应按钮会隐藏。',
                                 `<div style="display:flex;gap:8px;flex-wrap:wrap;">
-                                    ${[
-                                        { key: 'custom-status', label: '状态' },
-                                        { key: 'custom-priority', label: '重要性' },
-                                        { key: 'custom-start-date', label: '开始日期' },
-                                        { key: 'custom-completion-time', label: '截止日期' },
-                                        { key: 'custom-duration', label: '时长' },
-                                        { key: 'custom-remark', label: '备注' },
-                                        { key: 'action-ai-title', label: 'AI 优化' },
-                                        { key: 'action-reminder', label: '提醒' },
-                                        { key: 'action-more', label: '更多' }
-                                    ].map((item) => {
+                                    ${(() => {
+                                        const customFieldItems = __tmGetCustomFieldDefs()
+                                            .filter((field) => String(field?.id || '').trim() && field?.enabled !== false && String(field?.type || '').trim() !== 'text')
+                                            .map((field) => ({
+                                                key: `customField:${String(field?.id || '').trim()}`,
+                                                label: `自定义：${String(field?.name || field?.id || '').trim() || '未命名'}`
+                                            }))
+                                            .filter((item) => __tmParseCustomFieldColumnKey(item.key));
+                                        return [
+                                            { key: 'custom-status', label: '状态' },
+                                            { key: 'custom-priority', label: '重要性' },
+                                            { key: 'custom-start-date', label: '开始日期' },
+                                            { key: 'custom-completion-time', label: '截止日期' },
+                                            { key: 'custom-duration', label: '时长' },
+                                            { key: 'custom-remark', label: '备注' },
+                                            ...customFieldItems,
+                                            { key: 'action-ai-title', label: 'AI 优化' },
+                                            { key: 'action-reminder', label: '提醒' },
+                                            { key: 'action-more', label: '更多' }
+                                        ];
+                                    })().map((item) => {
                                         const checked = (SettingsStore.data.quickbarVisibleItems || []).includes(item.key);
                                         return `<label style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--tm-border-color);border-radius:999px;background:var(--tm-card-bg);cursor:${SettingsStore.data.enableQuickbar ? 'pointer' : 'not-allowed'};opacity:${SettingsStore.data.enableQuickbar ? 1 : 0.6};">
                                             <input class="b3-switch fn__flex-center" type="checkbox" ${checked ? 'checked' : ''} ${SettingsStore.data.enableQuickbar ? '' : 'disabled'} onchange="updateQuickbarVisibleItem('${item.key}', this.checked)">
-                                            <span>${item.label}</span>
+                                            <span>${esc(item.label)}</span>
                                         </label>`;
                                     }).join('')}
                                 </div>`,
@@ -1004,18 +1030,28 @@
                                 '常驻显示字段',
                                 '默认显示状态和截止日期，字段越多越容易挤占任务正文空间。',
                                 `<div style="display:flex;gap:8px;flex-wrap:wrap;">
-                                    ${[
-                                        { key: 'custom-status', label: '状态' },
-                                        { key: 'custom-completion-time', label: '截止日期' },
-                                        { key: 'custom-priority', label: '重要性' },
-                                        { key: 'custom-start-date', label: '开始日期' },
-                                        { key: 'custom-duration', label: '时长' },
-                                        { key: 'custom-remark', label: '备注' }
-                                    ].map((item) => {
+                                    ${(() => {
+                                        const customFieldItems = __tmGetCustomFieldDefs()
+                                            .filter((field) => String(field?.id || '').trim() && field?.enabled !== false && String(field?.type || '').trim() !== 'text')
+                                            .map((field) => ({
+                                                key: `customField:${String(field?.id || '').trim()}`,
+                                                label: `自定义：${String(field?.name || field?.id || '').trim() || '未命名'}`
+                                            }))
+                                            .filter((item) => __tmParseCustomFieldColumnKey(item.key));
+                                        return [
+                                            { key: 'custom-status', label: '状态' },
+                                            { key: 'custom-completion-time', label: '截止日期' },
+                                            { key: 'custom-priority', label: '重要性' },
+                                            { key: 'custom-start-date', label: '开始日期' },
+                                            { key: 'custom-duration', label: '时长' },
+                                            { key: 'custom-remark', label: '备注' },
+                                            ...customFieldItems
+                                        ];
+                                    })().map((item) => {
                                         const checked = (SettingsStore.data.quickbarInlineFields || []).includes(item.key);
                                         return `<label style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--tm-border-color);border-radius:999px;background:var(--tm-card-bg);cursor:${SettingsStore.data.enableQuickbarInlineMeta ? 'pointer' : 'not-allowed'};opacity:${SettingsStore.data.enableQuickbarInlineMeta ? 1 : 0.6};">
                                             <input class="b3-switch fn__flex-center" type="checkbox" ${checked ? 'checked' : ''} ${SettingsStore.data.enableQuickbarInlineMeta ? '' : 'disabled'} onchange="updateQuickbarInlineField('${item.key}', this.checked)">
-                                            <span>${item.label}</span>
+                                            <span>${esc(item.label)}</span>
                                         </label>`;
                                     }).join('')}
                                 </div>`,

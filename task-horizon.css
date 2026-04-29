@@ -437,6 +437,70 @@
     margin-top: 10px;
 }
 
+.tm-inline-editor.tm-custom-field-inline-editor {
+    background: var(--b3-theme-background, var(--tm-bg-color));
+    border: 1px solid var(--b3-border-color, var(--tm-border-color));
+    border-radius: 8px;
+    box-shadow: var(--b3-dialog-shadow, var(--tm-shadow));
+    color: var(--b3-theme-on-surface, var(--tm-text-color));
+}
+
+.tm-custom-field-inline-title {
+    padding: 0 4px 2px;
+    color: var(--b3-theme-on-surface-light, var(--tm-secondary-text)) !important;
+}
+
+.tm-custom-field-inline-list {
+    max-width: 100%;
+}
+
+.tm-custom-field-inline-editor .tm-status-option-btn {
+    height: 30px;
+    line-height: normal;
+    padding: 0 10px;
+    border-radius: 6px;
+    color: var(--b3-theme-on-surface, var(--tm-text-color));
+}
+
+.tm-custom-field-inline-editor .tm-status-option-btn:hover,
+.tm-custom-field-inline-editor .tm-status-option-btn[data-selected="true"] {
+    background: var(--b3-theme-surface-light, var(--tm-hover-bg));
+}
+
+.tm-custom-field-inline-editor .tm-status-tag {
+    pointer-events: none;
+}
+
+.tm-custom-field-inline-actions {
+    gap: 2px;
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid var(--b3-border-color, var(--tm-border-color));
+}
+
+.tm-custom-field-inline-editor .tm-custom-field-inline-action {
+    height: 28px;
+    line-height: 28px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--b3-theme-on-surface, var(--tm-text-color));
+    font-size: 12px;
+    font-weight: 400;
+}
+
+.tm-custom-field-inline-editor .tm-custom-field-inline-action:hover {
+    background: var(--b3-theme-surface-light, var(--tm-hover-bg));
+    border-color: transparent;
+    opacity: 1;
+}
+
+.tm-custom-field-inline-editor .tm-custom-field-inline-action.tm-btn-primary {
+    color: var(--b3-theme-primary, var(--tm-primary-color));
+}
+
 .tm-inline-editor--duration {
     min-width: 0;
     width: auto;
@@ -6642,6 +6706,41 @@ select.tm-btn-secondary {
     white-space: nowrap;
 }
 
+.tm-task-detail-subtask-dates {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 180px;
+}
+
+.tm-task-detail-subtask-date {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    min-height: 22px;
+    max-width: 88px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--tm-bg-color) 86%, var(--tm-input-bg));
+    color: var(--tm-secondary-text);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
+}
+
+.tm-task-detail-subtask-date svg {
+    flex: 0 0 auto;
+    width: 12px;
+    height: 12px;
+}
+
+.tm-task-detail-subtask-date span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .tm-task-detail-subtask-actions {
     display: inline-flex;
     align-items: center;
@@ -6978,6 +7077,14 @@ select.tm-btn-secondary {
 
 .tm-task-attachment-thumb__label {
     letter-spacing: 0.04em;
+}
+
+.viewer-container.tm-task-attachment-viewer {
+    z-index: 300000 !important;
+}
+
+.viewer-container.tm-task-attachment-viewer.viewer-backdrop {
+    background-color: rgba(12, 15, 20, 0.72);
 }
 
 .tm-task-attachment-empty {
@@ -7870,6 +7977,33 @@ select.tm-btn-secondary {
     line-height: 1.2;
 }
 
+.tm-checklist-custom-field-tags {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: min(34%, 260px);
+    overflow: hidden;
+}
+
+.tm-checklist-custom-field-chip {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 128px;
+}
+
+.tm-checklist-custom-field-chip .tm-status-tag {
+    min-width: 0;
+    max-width: 100%;
+    margin-left: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .tm-checklist-meta-compact {
     display: none;
     flex: 0 0 auto;
@@ -7885,7 +8019,8 @@ select.tm-btn-secondary {
 .tm-checklist-meta-compact-time,
 .tm-checklist-meta-compact-start,
 .tm-checklist-meta-compact-remaining,
-.tm-checklist-meta-compact-duration {
+.tm-checklist-meta-compact-duration,
+.tm-checklist-meta-compact-custom-field {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -7898,6 +8033,23 @@ select.tm-btn-secondary {
     flex: 0 0 auto;
     overflow: visible;
     text-overflow: clip;
+}
+
+.tm-checklist-meta-compact-custom-field {
+    display: inline-flex;
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 112px;
+    align-items: center;
+}
+
+.tm-checklist-meta-compact-custom-field .tm-status-tag {
+    min-width: 0;
+    max-width: 100%;
+    margin-left: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .tm-checklist-pane--compact .tm-checklist-items {

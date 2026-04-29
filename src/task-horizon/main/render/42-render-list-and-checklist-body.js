@@ -38,6 +38,41 @@
 
         function __tmRenderChecklistBodyHtml() {
             const rowModel = __tmBuildTaskRowModel();
+            const filteredTaskById = new Map();
+            try {
+                const visibleDateAliases = [
+                    ['startDate', 'start_date'],
+                    ['completionTime', 'completion_time'],
+                    ['customTime', 'custom_time'],
+                ];
+                const readVisibleDateAlias = (task, camel, snake) => String(task?.[camel] || task?.[snake] || '').trim();
+                const writeVisibleDateAlias = (task, camel, snake, value) => {
+                    if (!task || typeof task !== 'object') return;
+                    task[camel] = value;
+                    task[snake] = value;
+                };
+                Object.values(state.flatTasks || {}).forEach((task) => {
+                    if (!task || typeof task !== 'object') return;
+                    visibleDateAliases.forEach(([camel, snake]) => {
+                        const value = readVisibleDateAlias(task, camel, snake);
+                        if (value) writeVisibleDateAlias(task, camel, snake, value);
+                    });
+                });
+                (Array.isArray(state.filteredTasks) ? state.filteredTasks : []).forEach((task) => {
+                    const taskId = String(task?.id || '').trim();
+                    if (!taskId) return;
+                    filteredTaskById.set(taskId, task);
+                    const flatTask = state.flatTasks?.[taskId];
+                    visibleDateAliases.forEach(([camel, snake]) => {
+                        const taskValue = readVisibleDateAlias(task, camel, snake);
+                        const flatValue = readVisibleDateAlias(flatTask, camel, snake);
+                        const value = taskValue || flatValue;
+                        if (!value) return;
+                        writeVisibleDateAlias(task, camel, snake, value);
+                        writeVisibleDateAlias(flatTask, camel, snake, value);
+                    });
+                });
+            } catch (e) {}
             const checklistVirtualThreshold = 50;
             const checklistVirtualEnabled = Array.isArray(state.filteredTasks) && state.filteredTasks.length > checklistVirtualThreshold;
             const checklistStep = Math.max(100, Math.min(1200, Number(state.listRenderStep) || 100));
@@ -53,6 +88,23 @@
             const compactChecklistMetaFieldSet = checklistCompact
                 ? (globalThis.__tmViewPolicy?.getCompactChecklistMetaFieldSetForCurrentHost?.() || new Set(__tmGetCompactChecklistMetaFieldsForCurrentHost()))
                 : new Set(__TM_CHECKLIST_COMPACT_META_FIELD_DEFAULTS);
+            const compactCustomFieldDefs = checklistCompact
+                ? __tmGetCustomFieldDefs().filter((field) => {
+                    const id = String(field?.id || '').trim();
+                    return id
+                        && field?.enabled !== false
+                        && String(field?.type || '').trim() !== 'text'
+                        && compactChecklistMetaFieldSet.has(`customField:${id}`);
+                })
+                : [];
+            const normalChecklistCustomFieldDefs = checklistCompact
+                ? []
+                : __tmGetCustomFieldDefs().filter((field) => {
+                    const id = String(field?.id || '').trim();
+                    return id
+                        && field?.enabled !== false
+                        && String(field?.type || '').trim() !== 'text';
+                });
             const wrapCfg = __tmGetWrapConfig();
             const escSq = (s) => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
             const sheetMode = __tmChecklistUseSheetMode();
@@ -248,7 +300,8 @@
             };
 
             const renderTask = (row) => {
-                const task = state.flatTasks?.[String(row?.id || '').trim()];
+                const taskId = String(row?.id || '').trim();
+                const task = filteredTaskById.get(taskId) || state.flatTasks?.[taskId];
                 if (!task) return '';
                 const isMultiSelected = __tmIsTaskMultiSelected(task.id);
                 if ((state.groupByTaskName || (!state.groupByDocName && !state.groupByTime && !state.quadrantEnabled)) && task.root_id) {
@@ -322,6 +375,29 @@
                 if (showCompactCompletionTime) compactMetaParts.push(`<span class="tm-checklist-meta-compact-time" data-tm-task-time-field="completionTimeCompact">${esc(__tmFormatTaskTimeCompact(task.completionTime))}</span>`);
                 if (showCompactRemainingTime) compactMetaParts.push(`<span class="tm-checklist-meta-compact-remaining" data-tm-task-time-field="remainingTimeCompact">${esc(compactRemainingTimeLabel)}</span>`);
                 if (showCompactDuration) compactMetaParts.push(`<span class="tm-checklist-meta-compact-duration" data-tm-task-time-field="durationCompact">${esc(compactDurationText)}</span>`);
+                compactCustomFieldDefs.forEach((field) => {
+                    const fieldId = String(field?.id || '').trim();
+                    if (!fieldId) return;
+                    const fieldHtml = __tmBuildCustomFieldDisplayHtml(field, __tmGetTaskCustomFieldValue(task, fieldId), {
+                        allowEmpty: false,
+                        maxTags: String(field?.type || '').trim() === 'multi' ? 2 : 1,
+                    });
+                    if (!fieldHtml) return;
+                    compactMetaParts.push(`<span class="tm-checklist-meta-compact-custom-field" data-tm-custom-field-cell="${esc(fieldId)}" title="${esc(String(field?.name || fieldId).trim() || fieldId)}">${fieldHtml}</span>`);
+                });
+                const normalCustomFieldTags = normalChecklistCustomFieldDefs.map((field) => {
+                    const fieldId = String(field?.id || '').trim();
+                    if (!fieldId) return '';
+                    const fieldHtml = __tmBuildCustomFieldDisplayHtml(field, __tmGetTaskCustomFieldValue(task, fieldId), {
+                        allowEmpty: false,
+                        maxTags: String(field?.type || '').trim() === 'multi' ? 2 : 1,
+                    });
+                    if (!fieldHtml) return '';
+                    return `<span class="tm-checklist-custom-field-chip" data-tm-custom-field-cell="${esc(fieldId)}" title="${esc(String(field?.name || fieldId).trim() || fieldId)}">${fieldHtml}</span>`;
+                }).filter(Boolean).join('');
+                const normalCustomFieldTagsHtml = normalCustomFieldTags
+                    ? `<span class="tm-checklist-custom-field-tags">${normalCustomFieldTags}</span>`
+                    : '';
                 const hasCompactMeta = compactMetaParts.length > 0;
                 const compactMeta = hasCompactMeta
                     ? `<div class="tm-checklist-meta-compact">${compactMetaParts.join('')}</div>`
@@ -353,6 +429,7 @@
                                 <div class="tm-checklist-title-main"><div class="tm-checklist-title"><span class="tm-checklist-title-button"><span ${titleDragAttrs} onclick="tmChecklistTitleClick('${escSq(String(task.id || ''))}', event)"${__tmBuildTooltipAttrs(String(task.content || '').trim() || '(无内容)', { side: 'bottom', ariaLabel: false })}>${API.renderTaskContentHtml(task.markdown, String(task.content || '').trim() || '(无内容)')}${__tmRenderRecurringTaskInlineIcon(task)}${__tmRenderRecurringInstanceBadge(task, { className: 'tm-recurring-instance-badge--inline' })}</span></span>${reminderHtml}<span data-tm-field="remarkIcon">${remarkIconHtml}</span><span data-tm-field="attachmentIcon">${attachmentIconHtml}</span></div></div>
                                 ${compactMeta}
                                 ${showCompactStatusTag ? `<span class="tm-status-tag" data-tm-field="status" style="${statusChipStyle}">${esc(String(statusOption?.name || statusOption?.id || ''))}</span>` : ''}
+                                ${normalCustomFieldTagsHtml}
                                 ${task.pinned ? `<span class="tm-checklist-meta-chip" data-tm-field="pinned" title="置顶">${__tmRenderLucideIcon('pin')}</span>` : ''}
                                 ${hasChildren ? `<span class="tm-checklist-mobile-toggle" onclick="tmToggleCollapse('${escSq(String(task.id || ''))}', event)" style="opacity:1;pointer-events:auto;">${__tmRenderToggleIcon(16, collapsed ? 0 : 90, 'tm-tree-toggle-icon')}</span>` : ''}
                             </div>

@@ -6,14 +6,7 @@
                 && state.modal instanceof Element && document.body.contains(state.modal)) {
                 state.__tmChecklistRenderGuardUntil = 0;
                 state.__tmChecklistRenderGuardReason = '';
-                try {
-                    __tmPushRefreshDebug('render:checklist-guard-skip', {
-                        guardReason,
-                        now: Date.now(),
-                        until: guardUntil,
-                    });
-                } catch (e) {}
-                return;
+return;
             }
             if (guardUntil && Date.now() >= guardUntil) {
                 state.__tmChecklistRenderGuardUntil = 0;
@@ -1541,8 +1534,7 @@
                             if (!__tmRefreshChecklistSelectionInPlace(state.modal, 'detail-close')) render();
                         }
                     });
-                    try { __tmPushRefreshDebug('render-checklist-post-bind:bind-detail', { selectedId }); } catch (e) {}
-                }
+}
             }
         } catch (e) {}
         try { __tmApplyReminderTaskNameMarks(state.modal); } catch (e) {}
@@ -3825,13 +3817,6 @@
 
         const isValidValue = (val) => val !== undefined && val !== null && val !== '' && val !== 'null';
         const taskId = String(task.id || '').trim();
-        const shouldLogValueIds = Array.from(new Set([
-            taskId,
-            String(task?.attrHostId || task?.attr_host_id || '').trim(),
-            String(task?.parent_id || '').trim(),
-        ].filter(Boolean)));
-        const shouldLogValue = __tmShouldLogValueDebug(shouldLogValueIds, false);
-        const beforeValueSnapshot = shouldLogValue ? __tmSnapshotTaskValueDebugFields(task) : null;
         const resolvedDocId = String(task.docId || task.root_id || '').trim();
         const allowVisibleDateFallback = visibleDateFallbackTaskIds
             ? visibleDateFallbackTaskIds.has(taskId)
@@ -3990,19 +3975,6 @@
         task.docSeq = Number.isFinite(Number(task.docSeq ?? task.doc_seq)) ? Number(task.docSeq ?? task.doc_seq) : Number.POSITIVE_INFINITY;
         task.blockPath = String(task.blockPath || task.block_path || task.path || '').trim();
         task.blockSort = String(task.blockSort || task.block_sort || task.sort || '').trim();
-        if (shouldLogValue) {
-            __tmPushValueDebug('normalize:final', {
-                taskId,
-                allowVisibleDateFallback,
-                allowCustomStatusFallback,
-                meta: __tmSnapshotTaskMetaValueDebugFields(meta),
-                dbHasRepeatRule,
-                dbHasRepeatState,
-                dbHasRepeatHistory,
-                before: beforeValueSnapshot,
-                after: __tmSnapshotTaskValueDebugFields(task),
-            }, shouldLogValueIds);
-        }
         return task;
     }
 
@@ -4027,8 +3999,6 @@
         const oldRelationships = opts.oldRelationships instanceof Map ? opts.oldRelationships : null;
         const allowOldRelationshipFallback = opts.allowOldRelationshipFallback === true;
         const idMap = new Map();
-        const canLogValueDebug = __tmDebugChannels.value.enabled === true && __tmValueDebugWatchTaskIds.size > 0;
-        const debugMetaByTaskId = canLogValueDebug ? new Map() : null;
         const unresolvedParentIds = new Set();
         const fallbackTargets = [];
         const stats = {
@@ -4060,9 +4030,6 @@
             const directParentId = String(task?.parent_id || task?.parentId || '').trim();
             const joinedParentTaskId = String(task?.parentTaskId || task?.parent_task_id || '').trim();
             const listParentTaskId = String(task?.parent_list_parent_id || task?.parentListParentId || '').trim();
-            const debugIds = canLogValueDebug ? __tmGetValueDebugMatchKeysForTaskLike(task) : [];
-            const shouldLogValue = canLogValueDebug ? __tmShouldLogValueDebug(debugIds, false) : false;
-            const beforeSnapshot = shouldLogValue ? __tmSnapshotTaskValueDebugFields(task) : null;
             const manualParentTaskId = manualRelationships
                 ? String(manualRelationships.get(taskId) || '').trim()
                 : '';
@@ -4102,18 +4069,6 @@
             }
 
             task.parentTaskId = resolvedParentTaskId;
-            if (debugMetaByTaskId) {
-                debugMetaByTaskId.set(taskId, {
-                    directParentId,
-                    joinedParentTaskId,
-                    listParentTaskId,
-                    beforeSnapshot,
-                debugIds,
-                shouldLogValue,
-                initialResolution: resolution,
-                manualParentTaskId,
-            });
-            }
         });
 
         if (unresolvedParentIds.size > 0 && parentLookupDepth > 0) {
@@ -4160,7 +4115,6 @@
         tasks.forEach((task) => {
             const taskId = String(task?.id || '').trim();
             if (!taskId) return;
-            const debugMeta = debugMetaByTaskId ? (debugMetaByTaskId.get(taskId) || null) : null;
             let parentTaskId = String(task?.parentTaskId || '').trim();
             let resolvedInDoc = !!(parentTaskId && idMap.has(parentTaskId));
             if (!resolvedInDoc && allowOldRelationshipFallback && oldRelationships?.has(taskId)) {
@@ -4181,22 +4135,6 @@
             } else {
                 rootTasks.push(task);
                 if (parentTaskId) stats.missingParentInDocCount += 1;
-            }
-            if (debugMeta?.shouldLogValue) {
-                __tmPushValueDebug('parent-link:resolved', {
-                    source,
-                    docId,
-                    taskId,
-                    manualParentTaskId: debugMeta.manualParentTaskId,
-                    directParentId: debugMeta.directParentId,
-                    joinedParentTaskId: debugMeta.joinedParentTaskId,
-                    listParentTaskId: debugMeta.listParentTaskId,
-                    resolvedParentTaskId: parentTaskId,
-                    resolvedInDoc,
-                    initialResolution: debugMeta.initialResolution,
-                    before: debugMeta.beforeSnapshot,
-                    after: __tmSnapshotTaskValueDebugFields(task),
-                }, debugMeta.debugIds);
             }
         });
 
@@ -4890,8 +4828,6 @@
         const taskId = String(task.id || prevTask.id || '').trim();
         if (!__tmHasPendingVisibleDatePersistence(taskId)) return task;
         const isValidValue = (val) => val !== undefined && val !== null && val !== '' && val !== 'null';
-        const shouldLogValue = __tmShouldLogValueDebug([taskId], false);
-        const beforeValueSnapshot = shouldLogValue ? __tmSnapshotTaskValueDebugFields(task) : null;
         if (!isValidValue(task.completionTime) && isValidValue(prevTask.completionTime)) {
             task.completionTime = String(prevTask.completionTime);
         }
@@ -4900,14 +4836,6 @@
         }
         if (!isValidValue(task.customTime) && isValidValue(prevTask.customTime)) {
             task.customTime = String(prevTask.customTime);
-        }
-        if (shouldLogValue) {
-            __tmPushValueDebug('merge-prev-visible-date', {
-                taskId,
-                prevTask: __tmSnapshotTaskValueDebugFields(prevTask),
-                before: beforeValueSnapshot,
-                after: __tmSnapshotTaskValueDebugFields(task),
-            }, [taskId]);
         }
         return task;
     }

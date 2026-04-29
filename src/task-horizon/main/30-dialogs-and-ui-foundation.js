@@ -1703,8 +1703,7 @@
         const detailTaskId = String(detailPanel?.__tmTaskDetailTask?.id || detailPanel?.dataset?.tmDetailTaskId || state.detailTaskId || '').trim();
         const top = Number((staged && Number.isFinite(Number(staged.top))) ? Number(staged.top) : Number(pane?.scrollTop || 0));
         const left = Number((staged && Number.isFinite(Number(staged.left))) ? Number(staged.left) : Number(pane?.scrollLeft || 0));
-        try { __tmPushRefreshDebug('checklist-render-preserve-scroll', { top, left }); } catch (e) {}
-        if (detailTaskId) {
+if (detailTaskId) {
             try {
                 __tmPushDetailDebug('detail-host-rerender-request', {
                     scope: 'checklist',
@@ -1847,8 +1846,7 @@
         const pane = modal?.querySelector?.('[data-tm-cal-role="task-page-list"] .tm-checklist-scroll');
         const top = Number(pane?.scrollTop || 0);
         const left = Number(pane?.scrollLeft || 0);
-        try { __tmPushRefreshDebug('calendar-sidebar-checklist-refresh', { top, left }); } catch (e) {}
-        try {
+try {
             if (globalThis.__tmCalendar?.requestRefresh || globalThis.__tmCalendar?.refreshInPlace) {
                 __tmRequestCalendarRefresh({
                     reason: 'calendar-sidebar-checklist-preserve-scroll',
@@ -2158,19 +2156,7 @@
         const pending = state.viewRefreshPending;
         if (!pending) return false;
         if (__tmShouldDeferTaskFieldRefreshWork()) {
-            try {
-                __tmPushRefreshDebug('view-refresh-parked-task-work', {
-                    reason: sourceLabel,
-                    blocker: [
-                        state.isRefreshing ? 'refresh-core' : '',
-                        __tmTxTaskRefreshInFlight ? 'tx-refresh-in-flight' : '',
-                        __tmTxTaskRefreshTimer ? 'tx-refresh-queued' : '',
-                        __tmTabEnterAutoRefreshInFlight ? 'auto-refresh-in-flight' : '',
-                    ].filter(Boolean).join(','),
-                    pending,
-                });
-            } catch (e) {}
-            return false;
+return false;
         }
         if (state.viewRefreshTimer) return true;
         state.viewRefreshPending = null;
@@ -2183,14 +2169,7 @@
         const until = Date.now() + holdMs;
         state.contextInteractionQuietUntil = Math.max(Number(state.contextInteractionQuietUntil) || 0, until);
         state.contextInteractionQuietReason = String(reason || '').trim() || 'context-switch';
-        try {
-            __tmPushRefreshDebug('context-interaction-quiet', {
-                reason: String(state.contextInteractionQuietReason || '').trim(),
-                holdMs,
-                until: Number(state.contextInteractionQuietUntil || 0),
-            });
-        } catch (e) {}
-        return Number(state.contextInteractionQuietUntil || 0);
+return Number(state.contextInteractionQuietUntil || 0);
     }
 
     function __tmGetEnterAutoRefreshDelayMeta(source = '') {
@@ -2355,17 +2334,7 @@
         try {
             const growBy = __tmGetListAutoLoadMoreBatchSize(meta);
             state.listRenderLimit = Math.min(meta.total, meta.currentLimit + growBy);
-            try {
-                __tmPushRefreshDebug('list-auto-load-more', {
-                    mode,
-                    source: String(opts.source || '').trim() || 'scroll-near-bottom',
-                    prevLimit: meta.currentLimit,
-                    nextLimit: Number(state.listRenderLimit) || 0,
-                    total: meta.total,
-                    growBy,
-                });
-            } catch (e) {}
-            if (mode === 'checklist') {
+if (mode === 'checklist') {
                 __tmRenderChecklistPreserveScroll();
             } else if (!__tmRerenderListInPlace(state.modal)) {
                 render();

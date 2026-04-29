@@ -4305,7 +4305,6 @@
     function scheduleTaskPageRender(wrap, settings) {
         state.taskPageRenderWrap = wrap || state.wrapEl || null;
         state.taskPageRenderSettings = settings || state.taskPageRenderSettings || null;
-        try { __tmPushCalendarRefreshTrace('calendar-task-page-render-queued', { hasWrap: !!state.taskPageRenderWrap }); } catch (e) {}
         if (state.taskPageRenderRaf) return false;
         try {
             state.taskPageRenderRaf = requestAnimationFrame(() => {
@@ -4315,7 +4314,6 @@
                 state.taskPageRenderWrap = null;
                 state.taskPageRenderSettings = null;
                 if (!nextWrap) return;
-                try { __tmPushCalendarRefreshTrace('calendar-task-page-render-perform', { hasWrap: !!nextWrap }); } catch (e) {}
                 try { renderTaskPanel(nextWrap, nextSettings || getSettings()); } catch (e) {}
                 try { renderTaskPage(nextWrap, nextSettings || getSettings()); } catch (e) {}
             });
@@ -6658,14 +6656,6 @@
         return true;
     }
 
-    function __tmPushCalendarRefreshTrace() {
-        return null;
-    }
-
-    function __tmRecordCalendarRefreshDebug() {
-        return null;
-    }
-
     function __tmCalendarRangeTouchesDayKey(rangeStartMs, rangeEndMs, dayKey) {
         const key = String(dayKey || '').trim();
         if (!key) return false;
@@ -6756,11 +6746,6 @@
         const mainCalendar = state.calendar;
         const sideCalendar = state.sideDay?.calendar || null;
         const settings = getSettings();
-        __tmRecordCalendarRefreshDebug('apply', next, {
-            hasMain: !!mainCalendar,
-            hasSide: !!sideCalendar,
-            viewType: String(mainCalendar?.view?.type || '').trim(),
-        });
         if (next.flushTaskPanel !== false && wrap) {
             try { scheduleTaskPageRender(wrap, settings); } catch (e) {}
         }
@@ -6808,9 +6793,6 @@
     function scheduleCalendarRefresh(detail = {}) {
         state.calendarRefreshPending = __tmMergeCalendarRefreshDetail(state.calendarRefreshPending, detail);
         const pending = state.calendarRefreshPending;
-        __tmRecordCalendarRefreshDebug('queue', pending, {
-            hasTimer: !!state.calendarRefreshTimer,
-        });
         if (state.calendarRefreshTimer) return true;
         state.calendarRefreshTimer = setTimeout(() => {
             state.calendarRefreshTimer = null;
@@ -13195,7 +13177,6 @@
         const wrap = state.wrapEl;
         const cal = state.calendar;
         if (!wrap || !cal) return false;
-        try { __tmPushCalendarRefreshTrace('calendar-refreshInPlace', { options: { ...opt } }); } catch (e) {}
         try { ensureFcCompactAllDayStyle(); } catch (e) {}
         if (opt.layoutOnly !== true) {
             try { scheduleTaskPageRender(wrap, getSettings()); } catch (e2) {}

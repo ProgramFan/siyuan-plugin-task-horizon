@@ -914,41 +914,6 @@
                 out.customFieldHostAssignedCount = 0;
                 out.customFieldSelfAssignedCount = 0;
                 out.customFieldRequestedFieldCount = 0;
-                try {
-                    __tmGetValueDebugWatchTaskIds().forEach((watchId) => {
-                        const matches = __tmResolveValueDebugTaskMatches(out?.tasks, watchId);
-                        if (!matches.length) {
-                            __tmPushValueDebug('query:cache-hit', {
-                                watchId,
-                                taskId: watchId,
-                                cacheKey,
-                                cacheAgeMs: out.cacheAgeMs,
-                                sourceQueryTime,
-                                sourceAttrReadTime,
-                                sourceAttrHostReadTime,
-                                sourceCustomFieldReadTime,
-                                task: null,
-                            }, [watchId]);
-                            return;
-                        }
-                        matches.forEach(({ task, matchedBy, matchKeys }) => {
-                            const taskIds = Array.from(new Set([watchId].concat(matchKeys || [])));
-                            __tmPushValueDebug('query:cache-hit', {
-                                watchId,
-                                taskId: String(task?.id || '').trim() || watchId,
-                                matchedBy,
-                                matchKeys,
-                                cacheKey,
-                                cacheAgeMs: out.cacheAgeMs,
-                                sourceQueryTime,
-                                sourceAttrReadTime,
-                                sourceAttrHostReadTime,
-                                sourceCustomFieldReadTime,
-                                task: __tmSnapshotTaskValueDebugFields(task),
-                            }, taskIds);
-                        });
-                    });
-                } catch (e) {}
                 return out;
             }
             const docIdSet = new Set(safeDocIds);
@@ -1131,33 +1096,6 @@
                 const docInfoMap = await __tmBuildDocQueryInfoMapWithFallback(safeDocIds);
                 __tmApplyDocQueryInfoToTasks(tasks, docInfoMap);
             }
-            try {
-                __tmGetValueDebugWatchTaskIds().forEach((watchId) => {
-                    const matches = __tmResolveValueDebugTaskMatches(tasks, watchId);
-                    if (!matches.length) {
-                        __tmPushValueDebug('query:sql-row', {
-                            watchId,
-                            taskId: watchId,
-                            cacheHit: 0,
-                            queryTime,
-                            task: null,
-                        }, [watchId]);
-                        return;
-                    }
-                    matches.forEach(({ task, matchedBy, matchKeys }) => {
-                        const taskIds = Array.from(new Set([watchId].concat(matchKeys || [])));
-                        __tmPushValueDebug('query:sql-row', {
-                            watchId,
-                            taskId: String(task?.id || '').trim() || watchId,
-                            matchedBy,
-                            matchKeys,
-                            cacheHit: 0,
-                            queryTime,
-                            task: __tmSnapshotTaskValueDebugFields(task),
-                        }, taskIds);
-                    });
-                });
-            } catch (e) {}
             let attrHostReadTime = 0;
             let customFieldReadTime = 0;
             let attrReadTime = 0;
@@ -1207,37 +1145,6 @@
                 customFieldRequestedFieldCount: Number(customFieldReadMeta?.requestedFieldCount || 0),
                 readRepeatAttrsInline: repeatAttrsInline,
             };
-            try {
-                __tmGetValueDebugWatchTaskIds().forEach((watchId) => {
-                    const matches = __tmResolveValueDebugTaskMatches(filteredTasks, watchId);
-                    if (!matches.length) {
-                        __tmPushValueDebug('query:return', {
-                            watchId,
-                            taskId: watchId,
-                            cacheHit: 0,
-                            queryTime,
-                            attrHostReadTime,
-                            customFieldReadTime,
-                            task: null,
-                        }, [watchId]);
-                        return;
-                    }
-                    matches.forEach(({ task, matchedBy, matchKeys }) => {
-                        const taskIds = Array.from(new Set([watchId].concat(matchKeys || [])));
-                        __tmPushValueDebug('query:return', {
-                            watchId,
-                            taskId: String(task?.id || '').trim() || watchId,
-                            matchedBy,
-                            matchKeys,
-                            cacheHit: 0,
-                            queryTime,
-                            attrHostReadTime,
-                            customFieldReadTime,
-                            task: __tmSnapshotTaskValueDebugFields(task),
-                        }, taskIds);
-                    });
-                });
-            } catch (e) {}
             __tmTasksQueryCache.set(cacheKey, { t: Date.now(), v: __tmCloneTaskQueryResult(out), docIdSet, ttl: cacheTtlMs });
             return out;
         },
@@ -3026,6 +2933,20 @@
         return attrs;
     }
 
+    function __tmBuildTaskReadMirrorAttrs(attrs) {
+        const source = (attrs && typeof attrs === 'object') ? attrs : {};
+        const mirrorAttrs = {};
+        Object.entries(source).forEach(([key, value]) => {
+            const attrKey = String(key || '').trim();
+            if (!attrKey) return;
+            try {
+                if (typeof __tmIsTaskAttachmentAttrKey === 'function' && __tmIsTaskAttachmentAttrKey(attrKey)) return;
+            } catch (e) {}
+            mirrorAttrs[attrKey] = String(value ?? '');
+        });
+        return mirrorAttrs;
+    }
+
     async function __tmPersistMetaAndAttrsKernel(id, patch, options = {}) {
         if (!id || !patch || typeof patch !== 'object') return false;
         const opts = (options && typeof options === 'object') ? options : {};
@@ -3036,12 +2957,23 @@
         let attrTargetId = String(opts.attrTargetId || '').trim();
         if (!attrTargetId) {
             const task = currentTask;
-            attrTargetId = __tmGetTaskAttrHostId(task);
+            const currentTaskAttrHostId = __tmGetTaskAttrHostId(task);
+            let stableAttrHostId = '';
+            if (task && typeof task === 'object') {
+                try {
+                    stableAttrHostId = await __tmResolveStableTaskAttrHostId(taskId, task?.parent_id || task?.parentId || '', task);
+                } catch (e) {
+                    stableAttrHostId = '';
+                }
+            }
+            attrTargetId = stableAttrHostId || currentTaskAttrHostId;
         }
         if (!attrTargetId) {
             try { attrTargetId = await __tmResolveTaskAttrHostIdFromAnyBlockId(id); } catch (e) { attrTargetId = ''; }
         }
-        if (!attrTargetId) attrTargetId = String(id || '').trim();
+        if (!attrTargetId) {
+            attrTargetId = String(id || '').trim();
+        }
         if (Object.prototype.hasOwnProperty.call(patch, 'attachments')) {
             const fallbackAttachmentSource = MetaStore.get(taskId) || currentTask || {};
             previousAttachmentPaths = __tmGetTaskAttachmentPaths(fallbackAttachmentSource);
@@ -3068,6 +3000,8 @@
         });
         if (Object.keys(attrs).length === 0) return true;
         const hasStatusAttr = Object.prototype.hasOwnProperty.call(attrs, 'custom-status') || Object.prototype.hasOwnProperty.call(patch, 'customStatus');
+        const taskReadMirrorAttrs = __tmBuildTaskReadMirrorAttrs(attrs);
+        const hasTaskReadMirrorAttrs = Object.keys(taskReadMirrorAttrs).length > 0;
         if (hasStatusAttr) {
             __tmPushStatusDebug('attrs-kernel:start', {
                 taskId: String(id || '').trim(),
@@ -3081,15 +3015,19 @@
         let lastErr = null;
         for (let i = 0; i < 3; i++) {
             try {
+                const attempt = i + 1;
                 if (hasStatusAttr) {
                     __tmPushStatusDebug('attrs-kernel:attempt', {
                         taskId: String(id || '').trim(),
                         attrTargetId,
-                        attempt: i + 1,
+                        attempt,
                         attrs: { ...attrs },
                     }, [id, attrTargetId], { force: true });
                 }
                 await API.setAttrs(attrTargetId, attrs);
+                if (hasTaskReadMirrorAttrs && taskId && attrTargetId !== taskId) {
+                    try { await API.setAttrs(taskId, taskReadMirrorAttrs); } catch (e) {}
+                }
                 if (opts.skipFlush !== true) {
                     try { await API.call('/api/sqlite/flushTransaction', {}); } catch (e) {}
                     if (opts.saveMetaNow !== false) {
@@ -3100,13 +3038,14 @@
                     __tmPushStatusDebug('attrs-kernel:success', {
                         taskId: String(id || '').trim(),
                         attrTargetId,
-                        attempt: i + 1,
+                        attempt,
                         attrs: { ...attrs },
                     }, [id, attrTargetId], { force: true });
                 }
                 return true;
             } catch (e) {
                 lastErr = e;
+                const retryDelayMs = 120 + i * 200;
                 if (hasStatusAttr) {
                     __tmPushStatusDebug('attrs-kernel:error', {
                         taskId: String(id || '').trim(),
@@ -3115,7 +3054,7 @@
                         error: String(e?.message || e || ''),
                     }, [id, attrTargetId], { force: true });
                 }
-                await new Promise(r => setTimeout(r, 120 + i * 200));
+                await new Promise(r => setTimeout(r, retryDelayMs));
             }
         }
         throw lastErr || new Error('保存属性失败');
@@ -3138,6 +3077,8 @@
                 taskId: tid,
                 patch: { ...nextPatch },
                 docId,
+                source: String(opts.source || '').trim(),
+                attrTargetId: String(opts.attrTargetId || '').trim(),
                 skipFlush: opts.skipFlush !== false,
                 renderOptimistic: opts.renderOptimistic !== false,
                 withFilters: opts.withFilters !== false,
@@ -3159,6 +3100,8 @@
                 wait: opts.background !== true,
                 skipFlush: opts.skipFlush !== false,
                 docId: opts.docId,
+                source: opts.source,
+                attrTargetId: opts.attrTargetId,
                 renderOptimistic: opts.renderOptimistic !== false && opts.background !== true,
                 withFilters: opts.withFilters !== false,
             });
@@ -3895,9 +3838,13 @@
     async function __tmExecuteQueuedOp(op) {
         const type = String(op?.type || '').trim();
         if (type === 'attrPatch') {
-            return await __tmPersistMetaAndAttrsKernel(op?.data?.taskId, op?.data?.patch, {
+            const taskId = String(op?.data?.taskId || '').trim();
+            const patch = (op?.data?.patch && typeof op.data.patch === 'object') ? op.data.patch : {};
+            return await __tmPersistMetaAndAttrsKernel(taskId, patch, {
                 touchMetaStore: false,
                 skipFlush: !!op?.data?.skipFlush,
+                source: String(op?.data?.source || 'attrPatch-queue').trim() || 'attrPatch-queue',
+                attrTargetId: String(op?.data?.attrTargetId || '').trim(),
             });
         }
         if (type === 'taskPatch') {
@@ -3961,12 +3908,7 @@
             try {
                 const suppressMeta = __tmCollectMoveSuppressionIds(payload);
                 __tmMarkLocalMoveTxSuppressionIds(suppressMeta.blockIds, suppressMeta.docIds, 2400);
-                __tmPushRefreshDebug('move-task:suppress-mark', {
-                    mode,
-                    taskId: String(payload.taskId || '').trim(),
-                    blockIds: suppressMeta.blockIds,
-                    docIds: suppressMeta.docIds,
-                });
+                
             } catch (e) {}
             if (mode === 'heading') return await __tmMoveTaskToHeading(payload.taskId, payload.targetDocId, payload.headingId, { silentHint: true });
             if (mode === 'docTop') return await __tmMoveTaskToDocTop(payload.taskId, payload.targetDocId, { silentHint: true, clearHeading: true });
@@ -4422,9 +4364,6 @@
         const target = (task && typeof task === 'object') ? task : null;
         const nextPatch = (patch && typeof patch === 'object' && !Array.isArray(patch)) ? patch : null;
         if (!target || !nextPatch) return target;
-        const taskId = String(target?.id || '').trim();
-        const shouldLogValue = __tmShouldLogValueDebug([taskId], false);
-        const beforeValueSnapshot = shouldLogValue ? __tmSnapshotTaskValueDebugFields(target) : null;
         Object.entries(nextPatch).forEach(([key, rawValue]) => {
             const value = __tmNormalizeQueueTaskValue(key, rawValue);
             if (key === 'customFieldValues') {
@@ -4520,15 +4459,6 @@
                 target.repeat_history = target.repeatHistory;
             }
         });
-        if (shouldLogValue) {
-            __tmPushValueDebug('queue:task-patch', {
-                taskId,
-                patchKeys: Object.keys(nextPatch),
-                patch: nextPatch,
-                before: beforeValueSnapshot,
-                after: __tmSnapshotTaskValueDebugFields(target),
-            }, [taskId]);
-        }
         return target;
     }
 
@@ -7429,6 +7359,8 @@
                     priorityScore,
                     completedAt: String(detail.completedAt || '').trim(),
                     source: String(detail.source || '').trim(),
+                    previousDone: Object.prototype.hasOwnProperty.call(detail, 'previousDone') ? !!detail.previousDone : false,
+                    nextDone: Object.prototype.hasOwnProperty.call(detail, 'nextDone') ? !!detail.nextDone : true,
                 }
             }));
             return true;
@@ -7469,19 +7401,23 @@
         }
         const persistId = String(task?.id || resolvedId || requestedId).trim();
         if (!persistId) return null;
+        let attrHostId = String(__tmGetTaskAttrHostId(task) || persistId).trim() || persistId;
+        try {
+            attrHostId = await __tmResolveStableTaskAttrHostId(persistId, task?.parent_id || task?.parentId || '', task) || attrHostId;
+        } catch (e) {}
         return {
             requestedId,
             resolvedId,
             persistId,
             task: task || null,
+            attrHostId,
             docId: String(task?.root_id || task?.docId || '').trim(),
         };
     }
 
     function __tmRefreshViewsAfterTaskMutation(options = {}) {
         const opts = (options && typeof options === 'object') ? options : {};
-        try { __tmPushRefreshDebug('refresh-views-after-task-mutation', { ...opts }); } catch (e) {}
-        if (opts.refresh === false) return;
+if (opts.refresh === false) return;
         const calendarOnly = opts.calendarOnly === true;
         let refreshed = false;
         if (opts.refreshCalendar !== false) {
@@ -7535,13 +7471,7 @@
         }
         try {
             if (Object.prototype.hasOwnProperty.call(nextPatch, 'startDate') || Object.prototype.hasOwnProperty.call(nextPatch, 'completionTime')) {
-                __tmPushRefreshDebug('meta-patch-date-start', {
-                    taskId: String(taskId || '').trim(),
-                    patch: { ...nextPatch },
-                    source: String(opts.source || '').trim(),
-                    refresh: opts.refresh !== false,
-                    refreshCalendar: opts.refreshCalendar !== false,
-                });
+                
             }
         } catch (e) {}
         const context = await __tmResolveTaskMutationContext(taskId);
@@ -7550,6 +7480,7 @@
         const localAttrSuppressionIds = Array.from(new Set([
             context.requestedId,
             context.persistId,
+            context.attrHostId,
             __tmGetTaskAttrHostId(context.task),
             String(opts.broadcastTaskId || '').trim(),
         ].filter(Boolean)));
@@ -7559,23 +7490,13 @@
             String(context.task?.docId || '').trim(),
         ].filter(Boolean)));
         __tmMarkLocalTimeTxSuppressionIds(localAttrSuppressionIds, localAttrSuppressionDocIds, 2200);
-        try {
-            __tmPushRefreshDebug('local-attr-tx-suppress-arm', {
-                taskId: context.persistId,
-                requestedTaskId: context.requestedId,
-                patchKeys: Object.keys(nextPatch),
-                ids: localAttrSuppressionIds,
-                docIds: localAttrSuppressionDocIds,
-                source: String(opts.source || '').trim(),
-            });
-        } catch (e) {}
-        if (hasStatusPatch) {
+if (hasStatusPatch) {
             __tmPushStatusDebug('meta-patch:context', {
                 requestedTaskId: context.requestedId,
                 persistId: context.persistId,
-                attrHostId: __tmGetTaskAttrHostId(context.task),
+                attrHostId: context.attrHostId || __tmGetTaskAttrHostId(context.task),
                 inversePatch: { ...inversePatch },
-            }, [context.requestedId, context.persistId, __tmGetTaskAttrHostId(context.task)], { force: true });
+            }, [context.requestedId, context.persistId, context.attrHostId || __tmGetTaskAttrHostId(context.task)], { force: true });
         }
         if (opts.skipNoopCheck !== true && __tmIsPatchNoop(nextPatch, inversePatch)) {
             if (hasStatusPatch) {
@@ -7595,7 +7516,10 @@
                 inversePatch,
             };
         }
-        const suppressionIds = __tmGetTaskSuppressionIds(context.persistId, context.task);
+        const suppressionIds = Array.from(new Set(__tmGetTaskSuppressionIds(context.persistId, context.task)
+            .concat([context.attrHostId])
+            .map((item) => String(item || '').trim())
+            .filter(Boolean)));
         return await __tmMutationEngine.withSuppressedTasks(suppressionIds, async () => {
             if (hasStatusPatch) {
                 __tmPushStatusDebug('meta-patch:persist', {
@@ -7612,6 +7536,8 @@
                 docId: context.docId,
                 renderOptimistic: opts.renderOptimistic,
                 withFilters: opts.withFilters,
+                source: String(opts.source || '').trim(),
+                attrTargetId: context.attrHostId,
             };
             await __tmPersistMetaAndAttrsAsync(context.persistId, nextPatch, persistOptions);
             const settledInversePatch = Object.prototype.hasOwnProperty.call(nextPatch, 'attachments')
@@ -7671,10 +7597,7 @@
             }
             try {
                 if (Object.prototype.hasOwnProperty.call(nextPatch, 'startDate') || Object.prototype.hasOwnProperty.call(nextPatch, 'completionTime')) {
-                    __tmPushRefreshDebug('meta-patch-date-end', {
-                        taskId: context.persistId,
-                        source: String(opts.source || '').trim(),
-                    });
+                    
                 }
             } catch (e) {}
             if (opts.broadcast !== false) {
@@ -7944,19 +7867,7 @@
         try {
             __tmMarkLocalDoneTxSuppressionForTask(localStatusSuppressionTask, localStatusSuppressionIds, 2600);
         } catch (e) {}
-        try {
-            __tmPushRefreshDebug('local-status-tx-suppress-arm', {
-                taskId: context.persistId,
-                requestedTaskId: context.requestedId,
-                statusId: nextStatusId,
-                marker: nextMarker,
-                done: nextDone,
-                ids: localStatusSuppressionIds,
-                docId: String(context.docId || '').trim(),
-                source: String(opts.source || '').trim(),
-            });
-        } catch (e) {}
-        __tmPushStatusDebug('apply-status:start', {
+__tmPushStatusDebug('apply-status:start', {
             requestedTaskId: context.requestedId,
             persistId: context.persistId,
             attrHostId: __tmGetTaskAttrHostId(task),
@@ -8142,6 +8053,8 @@
                         priorityScore: taskRewardPriorityScore,
                         completedAt: String(completeAtPatch?.taskCompleteAt || '').trim(),
                         source: String(opts.source || 'task-status').trim() || 'task-status',
+                        previousDone: prevDone,
+                        nextDone,
                     });
                 } catch (e) {}
             }
@@ -8630,6 +8543,7 @@
     const __tmNativeDocCheckboxReconcileTimers = new Map();
     const __tmNativeDocCheckboxReconcileVersions = new Map();
     const __tmNativeDocCheckboxSyncIgnoreMap = new Map();
+    const __tmNativeDocCheckboxInsertedBlockMap = new Map();
     const __tmNativeDocCheckboxSyncQueue = [];
     let __tmNativeDocCheckboxSyncQueueRunning = false;
     const __tmNativeDocCheckboxPendingBatch = new Map();
@@ -8818,8 +8732,7 @@
             __tmHomepageRefreshTimer = 0;
             const currentReason = __tmHomepageRefreshReason;
             __tmHomepageRefreshReason = '';
-            try { __tmPushRefreshDebug('homepage-refresh-scheduled', { reason: currentReason }); } catch (e) {}
-            if (!state.homepageOpen) return;
+if (!state.homepageOpen) return;
             try { __tmRefreshHomepageInPlace().catch(() => null); } catch (e) {}
         }, Math.max(0, Number(delayMs) || 96));
         return true;
@@ -9339,36 +9252,9 @@ async function __tmRefreshAfterWake(reason) {
         });
         try {
             globalThis.__taskHorizonMarkModified?.(relayTaskId);
-            __tmPushRefreshDebug('quickbar-auto-update:relay-mark-modified', {
-                taskId: relayTaskId,
-                attrHostId: relayAttrHostId,
-                attrKey: relayAttrKey,
-                relayTransport: String(transport || '').trim() || 'storage',
-                relaySeq: Number(relay?.seq || 0) || 0,
-                relayTime: String(relay?.time || '').trim(),
-            });
-        } catch (e2) {}
-        try {
-            __tmPushRefreshDebug('quickbar-auto-update:relay-refresh-scheduled', {
-                taskId: relayTaskId,
-                attrHostId: relayAttrHostId,
-                attrKey: relayAttrKey,
-                relayTransport: String(transport || '').trim() || 'storage',
-                relaySeq: Number(relay?.seq || 0) || 0,
-                relayTime: String(relay?.time || '').trim(),
-            });
+            
         } catch (e2) {}
         setTimeout(() => {
-            try {
-                __tmPushRefreshDebug('quickbar-auto-update:relay-refresh-fire', {
-                    taskId: relayTaskId,
-                    attrHostId: relayAttrHostId,
-                    attrKey: relayAttrKey,
-                    relayTransport: String(transport || '').trim() || 'storage',
-                    relaySeq: Number(relay?.seq || 0) || 0,
-                    relayTime: String(relay?.time || '').trim(),
-                });
-            } catch (e2) {}
             try { globalThis.__taskHorizonRefresh?.(); } catch (e2) {}
         }, 0);
         return true;
@@ -9546,11 +9432,9 @@ async function __tmRefreshAfterWake(reason) {
         const force = options?.force === true;
         const sourceLabel = String(source || '').trim() || 'unknown';
         if (!__tmIsPluginVisibleNow()) {
-            try { __tmPushRefreshDebug('auto-refresh:skip', { source: sourceLabel, reason: 'plugin-hidden', force }); } catch (e) {}
             return false;
         }
         if (!force && !__tmHasAutoRefreshPendingSync()) {
-            try { __tmPushRefreshDebug('auto-refresh:skip', { source: sourceLabel, reason: 'no-pending-dirty', force }); } catch (e) {}
             return false;
         }
         if (options?.deferIfDetailBusy !== false) {
@@ -9568,31 +9452,20 @@ async function __tmRefreshAfterWake(reason) {
                         })),
                     });
                 } catch (e) {}
-                try { __tmPushRefreshDebug('auto-refresh:skip', { source: sourceLabel, reason: 'detail-busy', force }); } catch (e) {}
                 return false;
             }
         }
         if (options?.ignoreContextQuiet !== true) {
             const delayMeta = __tmGetEnterAutoRefreshDelayMeta(sourceLabel);
             if (delayMeta.shouldDelay) {
-                try {
-                    __tmPushRefreshDebug('auto-refresh:skip', {
-                        source: sourceLabel,
-                        reason: delayMeta.reason || 'context-quiet',
-                        force,
-                        waitMs: Number(delayMeta.waitMs || 0),
-                    });
-                } catch (e) {}
                 return false;
             }
         }
         const now = Date.now();
         if (__tmTabEnterAutoRefreshInFlight) {
-            try { __tmPushRefreshDebug('auto-refresh:skip', { source: sourceLabel, reason: 'in-flight', force }); } catch (e) {}
             return false;
         }
         if (now - (Number(__tmTabEnterAutoRefreshLastTs) || 0) < 1200) {
-            try { __tmPushRefreshDebug('auto-refresh:skip', { source: sourceLabel, reason: 'throttled', force }); } catch (e) {}
             return false;
         }
         const hadQuickbarDirty = __tmHasQuickbarModificationsSync();
@@ -9605,31 +9478,11 @@ async function __tmRefreshAfterWake(reason) {
         __tmTabEnterAutoRefreshInFlight = true;
         const startedAt = __tmPerfNow();
         try {
-            __tmPushRefreshDebug('auto-refresh:start', {
-                source: sourceLabel,
-                force,
-                hadQuickbarDirty,
-                hadExternalDirty,
-                docCount: pendingTargets.docIds.length,
-                blockCount: pendingTargets.blockIds.length,
-            });
-        } catch (e) {}
-        try {
             await new Promise((resolve) => setTimeout(resolve, hadQuickbarDirty ? 200 : 80));
             const lateGateMeta = __tmGetBackgroundRefreshGateMeta(sourceLabel, {
                 ignoreContextQuiet: options?.ignoreContextQuiet === true,
             });
             if (!lateGateMeta.allowRun) {
-                try {
-                    __tmPushRefreshDebug('auto-refresh:skip', {
-                        source: sourceLabel,
-                        reason: lateGateMeta.reason || 'deferred',
-                        force,
-                        waitMs: Number(lateGateMeta.waitMs || 0),
-                        lateCheck: true,
-                        parked: lateGateMeta.parkUntilVisible === true,
-                    });
-                } catch (e) {}
                 return false;
             }
             if (!hadQuickbarDirty && hadExternalDirty) {
@@ -9644,14 +9497,6 @@ async function __tmRefreshAfterWake(reason) {
                     if (incrementalOk) {
                         __tmClearExternalTaskTxDirty();
                         __tmClearPendingTxRefreshTargets(pendingTargets);
-                        try {
-                            __tmPushRefreshDebug('auto-refresh:end', {
-                                source: sourceLabel,
-                                path: 'incremental',
-                                ok: true,
-                                durationMs: __tmRoundPerfMs(__tmPerfNow() - startedAt),
-                            });
-                        } catch (e) {}
                         return true;
                     }
                 } catch (e) {}
@@ -9666,14 +9511,6 @@ async function __tmRefreshAfterWake(reason) {
                 if (hadExternalDirty) __tmClearExternalTaskTxDirty();
                 __tmClearPendingTxRefreshTargets(pendingTargets);
             }
-            try {
-                __tmPushRefreshDebug('auto-refresh:end', {
-                    source: sourceLabel,
-                    path: 'full',
-                    ok: ok === true,
-                    durationMs: __tmRoundPerfMs(__tmPerfNow() - startedAt),
-                });
-            } catch (e) {}
             return ok;
         } finally {
             __tmTabEnterAutoRefreshInFlight = false;
@@ -9684,22 +9521,8 @@ async function __tmRefreshAfterWake(reason) {
     async function __tmSilentRefreshAfterQuickbarUpdate() {
         try {
             const mode = String(state.viewMode || '').trim();
-            try {
-                __tmPushRefreshDebug('quickbar-silent-refresh:start', {
-                    viewMode: mode,
-                    isRefreshing: state.isRefreshing === true,
-                    modifiedCount: Number(__tmModifiedTaskIds?.size || 0),
-                });
-            } catch (e2) {}
             if (mode === 'calendar' && typeof window.tmRefreshCalendarInPlace === 'function') {
                 try { await window.tmRefreshCalendarInPlace({ silent: true }); } catch (e) {}
-                try {
-                    __tmPushRefreshDebug('quickbar-silent-refresh:end', {
-                        path: 'calendar-in-place',
-                        ok: true,
-                        viewMode: mode,
-                    });
-                } catch (e2) {}
                 return;
             }
         } catch (e) {}
@@ -9709,22 +9532,10 @@ async function __tmRefreshAfterWake(reason) {
                     source: 'quickbar-silent-refresh',
                 });
             } catch (e) {}
-            try {
-                __tmPushRefreshDebug('quickbar-silent-refresh:deferred', {
-                    reason: 'detail-busy',
-                    viewMode: String(state.viewMode || '').trim() || '',
-                });
-            } catch (e2) {}
             setTimeout(() => { try { __tmSilentRefreshAfterQuickbarUpdate(); } catch (e2) {} }, 320);
             return;
         }
         if (state.isRefreshing) {
-            try {
-                __tmPushRefreshDebug('quickbar-silent-refresh:deferred', {
-                    reason: 'refresh-in-flight',
-                    viewMode: String(state.viewMode || '').trim() || '',
-                });
-            } catch (e2) {}
             setTimeout(() => { try { __tmSilentRefreshAfterQuickbarUpdate(); } catch (e) {} }, 300);
             return;
         }
@@ -9748,15 +9559,7 @@ async function __tmRefreshAfterWake(reason) {
                         source: 'quickbar-silent-refresh',
                     });
                 } catch (e) {}
-                try {
-                    __tmPushRefreshDebug('quickbar-silent-refresh:end', {
-                        path: 'detail-busy-after-load',
-                        ok: false,
-                        removedCount,
-                        viewMode: String(state.viewMode || '').trim() || '',
-                    });
-                } catch (e2) {}
-                refreshOk = false;
+refreshOk = false;
                 refreshPath = 'detail-busy-after-load';
                 return;
             }
@@ -9766,26 +9569,12 @@ async function __tmRefreshAfterWake(reason) {
                 }
             } catch (e) {}
         } catch (e) {
-            try {
-                __tmPushRefreshDebug('quickbar-silent-refresh:error', {
-                    error: String(e?.message || e || '').trim(),
-                    viewMode: String(state.viewMode || '').trim() || '',
-                });
-            } catch (e2) {}
-            refreshOk = false;
+refreshOk = false;
             refreshPath = 'error';
         } finally {
             state.isRefreshing = false;
             if (refreshPath !== 'detail-busy-after-load') {
-                try {
-                    __tmPushRefreshDebug('quickbar-silent-refresh:end', {
-                        path: refreshPath,
-                        ok: refreshOk,
-                        removedCount,
-                        viewMode: String(state.viewMode || '').trim() || '',
-                    });
-                } catch (e2) {}
-            }
+}
             try { __tmFlushDeferredViewRefreshAfterTaskFieldWork('quickbar-silent-refresh:end'); } catch (e2) {}
         }
     }
@@ -9876,16 +9665,7 @@ async function __tmRefreshAfterWake(reason) {
                 if (__tmIsPluginVisibleNow()) {
                     const delayMeta = __tmGetEnterAutoRefreshDelayMeta(source);
                     if (delayMeta.shouldDelay) {
-                        try {
-                            __tmPushRefreshDebug('auto-refresh:skip', {
-                                source: String(source || '').trim() || 'unknown',
-                                reason: delayMeta.reason || 'context-quiet',
-                                force: __tmHasAutoRefreshPendingSync(),
-                                tryCount: Number(__tmTabEnterAutoRefreshTryCount || 0),
-                                waitMs: Number(delayMeta.waitMs || 0),
-                            });
-                        } catch (e) {}
-                        if (__tmTabEnterAutoRefreshTryCount < 16) {
+if (__tmTabEnterAutoRefreshTryCount < 16) {
                             __tmTabEnterAutoRefreshTimer = setTimeout(tick, Number(delayMeta.waitMs || 180));
                         }
                         return;
@@ -10725,11 +10505,7 @@ async function __tmRefreshAfterWake(reason) {
         });
         try {
             if (ids.length > 0) {
-                __tmPushRefreshDebug('doc-flow-rank:hold', {
-                    docIds: ids,
-                    holdMs: Math.max(1000, Number(holdMs) || 0),
-                    reason: String(reason || '').trim(),
-                });
+                
             }
         } catch (e) {}
     }
@@ -11345,9 +11121,6 @@ async function __tmRefreshAfterWake(reason) {
 
     function __tmRenderAboutSettingsPanel() {
         const snapshot = __tmBuildDeviceRecognitionSnapshot();
-        const refreshDebugEnabled = SettingsStore?.data?.refreshDebugLogEnabled === true;
-        const refreshDebugLogCount = Array.isArray(__tmDebugChannels?.refresh?.log) ? __tmDebugChannels.refresh.log.length : 0;
-        const refreshDebugLogLimit = Number((__tmDebugChannels?.refresh && __tmDebugChannels.refresh.limit) || 400);
         const summaryCards = [
             ['当前插件 UI 判定', snapshot.current.uiMode === 'mobile' ? '移动端' : '桌面端'],
             ['参考 UI 判定', snapshot.reference.uiMode === 'mobile' ? '移动端' : '桌面端'],
@@ -11412,23 +11185,6 @@ async function __tmRefreshAfterWake(reason) {
                             <div style="font-size:14px;font-weight:700;color:var(--tm-text-color);word-break:break-word;">${esc(__tmFormatDiagnosticValue(value))}</div>
                         </div>
                     `).join('')}
-                </div>
-
-                <div style="margin-bottom:14px;padding:12px;border:1px solid var(--tm-border-color);border-radius:10px;background:var(--tm-card-bg);">
-                    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
-                        <div style="min-width:0;flex:1 1 260px;">
-                            <div style="font-weight:600;">后台调试日志</div>
-                            <div style="font-size:12px;color:var(--tm-secondary-text);margin-top:6px;line-height:1.7;">关闭后不再记录后台刷新、滚动门禁、自动刷新等诊断日志，并会立即清空当前内存缓存。默认关闭。</div>
-                            <div style="font-size:12px;color:var(--tm-secondary-text);margin-top:8px;">当前状态：${refreshDebugEnabled ? '已开启' : '已关闭'} ｜ 缓存 ${refreshDebugLogCount} / ${refreshDebugLogLimit} 条</div>
-                        </div>
-                        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-                            ${refreshDebugLogCount > 0 ? `<button class="tm-btn tm-btn-secondary" onclick="tmClearRefreshDebugLog()">清空缓存</button>` : ''}
-                            <label style="display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--tm-border-color);border-radius:999px;background:var(--tm-sidebar-bg);cursor:pointer;">
-                                <span style="font-size:12px;color:var(--tm-text-color);">记录日志</span>
-                                <input class="b3-switch fn__flex-center" type="checkbox" ${refreshDebugEnabled ? 'checked' : ''} onchange="tmToggleRefreshDebugLog(this.checked)">
-                            </label>
-                        </div>
-                    </div>
                 </div>
 
                 ${snapshot.reference.differsFromCurrent ? `
@@ -11564,8 +11320,10 @@ async function __tmRefreshAfterWake(reason) {
         const result = [];
         source.forEach((value) => {
             const key = String(value || '').trim();
-            if (!allow.has(key) || result.includes(key)) return;
-            result.push(key);
+            const customFieldId = __tmParseCustomFieldColumnKey(key);
+            const normalizedKey = customFieldId ? `customField:${customFieldId}` : key;
+            if ((!allow.has(normalizedKey) && !customFieldId) || result.includes(normalizedKey)) return;
+            result.push(normalizedKey);
         });
         return result;
     };
@@ -14384,14 +14142,7 @@ async function __tmRefreshAfterWake(reason) {
         try { queueMicrotask(() => { try { __tmRunFlipAnimation(modal); } catch (e) {} }); } catch (e) {
             try { Promise.resolve().then(() => { try { __tmRunFlipAnimation(modal); } catch (e2) {} }); } catch (e2) {}
         }
-        try {
-            __tmPushRefreshDebug('list-rerender-in-place:ok', {
-                top,
-                left,
-                modalConnected: modal.isConnected === true,
-            });
-        } catch (e) {}
-        return true;
+return true;
     }
 
     function __tmShouldUseGlobalTimelineScroll(modalEl) {
@@ -14802,8 +14553,7 @@ async function __tmRefreshAfterWake(reason) {
         const modal = modalEl instanceof Element ? modalEl : state.modal;
         if (!(modal instanceof Element)) return false;
         if (String(state.viewMode || '').trim() !== 'checklist') return false;
-        try { __tmPushRefreshDebug('checklist-rerender-in-place', {}); } catch (e) {}
-        const renderBodyHtml = state.renderChecklistBodyHtml;
+const renderBodyHtml = state.renderChecklistBodyHtml;
         if (typeof renderBodyHtml !== 'function') return false;
         const body = modal.querySelector('.tm-body.tm-body--checklist');
         const pane = modal.querySelector('.tm-checklist-scroll');

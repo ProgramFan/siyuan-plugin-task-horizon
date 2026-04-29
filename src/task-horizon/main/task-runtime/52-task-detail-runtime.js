@@ -21,13 +21,15 @@
         const curReminderTip = curHasReminder
             ? (curReminderText ? `${curReminderSnapshot?.isOverdue ? '最近一次提醒' : '提醒'}：${curReminderText}` : '已添加提醒')
             : '提醒';
+        const taskStartDateValue = String(task?.startDate || task?.start_date || '').trim();
+        const taskCompletionTimeValue = String(task?.completionTime || task?.completion_time || '').trim();
         const curRepeatRule = __tmGetTaskRepeatRule(task);
         const curRepeatSummary = __tmGetTaskRepeatSummary(curRepeatRule, {
-            startDate: task?.startDate,
-            completionTime: task?.completionTime,
+            startDate: taskStartDateValue,
+            completionTime: taskCompletionTimeValue,
         });
-        const startValue = __tmNormalizeDateOnly(String(task?.startDate || '').trim());
-        const endValue = __tmNormalizeDateOnly(String(task?.completionTime || '').trim());
+        const startValue = __tmNormalizeDateOnly(taskStartDateValue);
+        const endValue = __tmNormalizeDateOnly(taskCompletionTimeValue);
         const durationValue = String(task?.duration || '').trim();
         const spentValue = __tmGetTaskSpentDisplay(task);
         const remarkValue = __tmNormalizeRemarkMarkdown(task?.remark || '');
@@ -960,7 +962,9 @@
                 return v;
             };
             const nextContent = String(root.querySelector('[data-tm-detail="content"]')?.value || '').trim();
-            const nextStatus = String(root.querySelector('[data-tm-detail="status"]')?.value || '').trim() || 'todo';
+            const nextStatus = String(root.querySelector('[data-tm-detail="status"]')?.value || '').trim()
+                || __tmResolveTaskStatusId(task)
+                || __tmGetDefaultUndoneStatusId(SettingsStore?.data?.customStatusOptions || []);
             const nextPriority = String(root.querySelector('[data-tm-detail="priority"]')?.value || '').trim();
             const pinnedInput = root.querySelector('[data-tm-detail="pinned"]');
             const nextPinned = (pinnedInput instanceof HTMLInputElement)
@@ -988,10 +992,10 @@
             const task0 = (taskLike && typeof taskLike === 'object') ? taskLike : {};
             const currentContent = String(task0.content || '').trim();
             const currentStatus = __tmResolveTaskStatusId(task0);
-            const currentPriority = String(task0.priority || '').trim();
-            const currentPinned = !!task0.pinned;
-            const currentStart = String(task0.startDate || '').trim();
-            const currentEnd = String(task0.completionTime || '').trim();
+            const currentPriority = String(task0.priority || task0.custom_priority || '').trim();
+            const currentPinned = !!(task0.pinned === true || task0.pinned === '1' || task0.pinned === 1 || String(task0.custom_pinned || '').trim() === '1');
+            const currentStart = String(task0.startDate || task0.start_date || '').trim();
+            const currentEnd = String(task0.completionTime || task0.completion_time || '').trim();
             const currentDuration = String(task0.duration || '').trim();
             const currentRemark = __tmNormalizeRemarkMarkdown(task0.remark || '');
 
@@ -1078,16 +1082,7 @@
             } = formState;
             try {
                 if (nextStart !== String(task?.startDate || '').trim() || nextEnd !== String(task?.completionTime || '').trim()) {
-                    __tmPushRefreshDebug('detail-save-date-change', {
-                        taskId: String(task?.id || taskId || '').trim(),
-                        embedded: embedded === true,
-                        viewMode: String(state.viewMode || '').trim(),
-                        nextStart,
-                        nextEnd,
-                        showHint: !!opts.showHint,
-                        closeAfterSave: !!opts.closeAfterSave,
-                        skipRerender: !!opts.skipRerender,
-                    });
+                    
                 }
             } catch (e) {}
             if (!task) {
@@ -1159,17 +1154,7 @@
                         pureTimeOnly: diff.pureTimeOnly,
                     });
                 } catch (e) {}
-                try {
-                    __tmPushRefreshDebug('detail-save-diff', {
-                        taskId: String(task.id || '').trim(),
-                        changedKeys: diff.changedKeys.slice(),
-                        contentChanged: diff.contentChanged,
-                        statusChanged: diff.statusChanged,
-                        pureTimeOnly: diff.pureTimeOnly,
-                    });
-                } catch (e) {}
-
-                if (!__tmIsCollectedOtherBlockTask(task) && diff.contentChanged) {
+if (!__tmIsCollectedOtherBlockTask(task) && diff.contentChanged) {
                     try {
                         __tmPushDetailDebug('detail-save-content-patch', {
                             taskId: String(task.id || '').trim(),
@@ -3136,10 +3121,10 @@
             done: !!taskLike?.done,
             customStatus: String(taskLike?.customStatus || taskLike?.custom_status || '').trim(),
             priority: String(taskLike?.priority || '').trim(),
-            startDate: String(taskLike?.startDate || '').trim(),
-            completionTime: String(taskLike?.completionTime || '').trim(),
+            startDate: String(taskLike?.startDate || taskLike?.start_date || '').trim(),
+            completionTime: String(taskLike?.completionTime || taskLike?.completion_time || '').trim(),
             duration: String(taskLike?.duration || '').trim(),
-            pinned: !!taskLike?.pinned,
+            pinned: !!(taskLike?.pinned === true || taskLike?.pinned === '1' || taskLike?.pinned === 1 || String(taskLike?.custom_pinned || '').trim() === '1'),
             remark: String(taskLike?.remark || ''),
             customSig,
             sheetOpen: !!opts.sheetOpen,
@@ -3152,8 +3137,7 @@
         if (!(modal instanceof Element)) return false;
         if (!__tmIsChecklistSelectionContext(modal)) return false;
         const selectedId = String(state.detailTaskId || '').trim();
-        try { __tmPushRefreshDebug('checklist-selection-rebuild:start', { selectedId, source: String(source || '').trim() || 'unknown' }); } catch (e) {}
-        const multiSelectedSet = __tmGetMultiSelectedTaskIdSet();
+const multiSelectedSet = __tmGetMultiSelectedTaskIdSet();
         const panelState = __tmResolveChecklistDetailPanel(modal, { preferSheetMode: __tmChecklistUseSheetMode(modal) });
         const sheetMode = !!panelState.sheetMode;
         const items = modal.querySelectorAll('.tm-checklist-item[data-id]');
@@ -3194,8 +3178,7 @@
             const sheet = modal.querySelector('#tmChecklistSheet');
             if (backdrop instanceof HTMLElement) backdrop.classList.toggle('tm-checklist-sheet-backdrop--open', !!(sheetMode && state.checklistDetailSheetOpen && task));
             if (sheet instanceof HTMLElement) sheet.classList.toggle('tm-checklist-sheet--open', !!(sheetMode && state.checklistDetailSheetOpen && task));
-            try { __tmPushRefreshDebug('checklist-selection-rebuild:skip', { selectedId, source: String(source || '').trim() || 'unknown' }); } catch (e) {}
-            return true;
+return true;
         }
         if (keepExistingDetail) {
             try {
@@ -3251,8 +3234,7 @@
             try { __tmRestoreChecklistDetailScrollSnapshot(detailScrollSnapshot, modal); } catch (e) {}
         }
         try { modal.__tmChecklistSelectionSignature = nextSignature; } catch (e) {}
-        try { __tmPushRefreshDebug('checklist-selection-rebuild:end', { selectedId, hasTask: !!task, source: String(source || '').trim() || 'unknown', keepExistingDetail }); } catch (e) {}
-        return true;
+return true;
     }
 
     function __tmPatchTaskDetailPanelInPlace(panelEl, taskId, patch = {}) {
@@ -3313,12 +3295,12 @@
             }
         };
 
-        if (Object.prototype.hasOwnProperty.call(nextPatch, 'startDate')) syncChipField('startDate', String(task?.startDate || '').trim(), 'startDate');
-        if (Object.prototype.hasOwnProperty.call(nextPatch, 'completionTime')) syncChipField('completionTime', String(task?.completionTime || '').trim(), 'completionTime');
+        if (Object.prototype.hasOwnProperty.call(nextPatch, 'startDate')) syncChipField('startDate', String(task?.startDate || task?.start_date || '').trim(), 'startDate');
+        if (Object.prototype.hasOwnProperty.call(nextPatch, 'completionTime')) syncChipField('completionTime', String(task?.completionTime || task?.completion_time || '').trim(), 'completionTime');
         if (Object.prototype.hasOwnProperty.call(nextPatch, 'duration')) syncChipField('duration', String(task?.duration || '').trim(), 'duration');
 
         if (Object.prototype.hasOwnProperty.call(nextPatch, 'pinned')) {
-            const pinnedValue = !!task?.pinned;
+            const pinnedValue = !!(task?.pinned === true || task?.pinned === '1' || task?.pinned === 1 || String(task?.custom_pinned || '').trim() === '1');
             const pinnedInput = panel.querySelector('input[type="hidden"][data-tm-detail="pinned"]');
             if (pinnedInput instanceof HTMLInputElement) pinnedInput.value = pinnedValue ? '1' : '';
             const pinnedBtn = panel.querySelector('[data-tm-detail-pinned-toggle]');
@@ -3407,14 +3389,12 @@
                     attachments: true,
                     customFieldValues: true,
                 });
-                try { __tmPushRefreshDebug('checklist-detail-patch', { taskId: tid, patched: detailPatched }); } catch (e) {}
-                refreshed = detailPatched || refreshed;
+refreshed = detailPatched || refreshed;
             } catch (e) {}
             if (!refreshed) {
                 const panel = __tmResolveChecklistDetailPanel(state.modal).panel;
                 if (!__tmIsTaskDetailRootUsable(panel, { taskId: tid })) {
-                    try { __tmPushRefreshDebug('checklist-detail-patch:skip-unusable', { taskId: tid }); } catch (e) {}
-                } else {
+} else {
                     const shouldDeferFallback = __tmShouldDeferTaskDetailFallback(panel);
                     if (shouldDeferFallback) {
                         const task = __tmTaskStateKernel.getTask(tid);
@@ -3427,8 +3407,7 @@
                                 reasons: __tmCollectTaskDetailFallbackDeferReasons(panel),
                             });
                         } catch (e) {}
-                        try { __tmPushRefreshDebug('checklist-detail-patch:deferred-fallback', { taskId: tid }); } catch (e) {}
-                        refreshed = !!task || refreshed;
+refreshed = !!task || refreshed;
                     } else {
                         try {
                             __tmPushDetailDebug('detail-refresh-fallback-rebuild', {
@@ -3437,8 +3416,7 @@
                                 reasons: [],
                             });
                         } catch (e) {}
-                        try { __tmPushRefreshDebug('checklist-detail-patch:fallback-rebuild', { taskId: tid }); } catch (e) {}
-                        refreshed = !!__tmRefreshChecklistSelectionInPlace(state.modal, 'visible-task-detail-fallback') || refreshed;
+refreshed = !!__tmRefreshChecklistSelectionInPlace(state.modal, 'visible-task-detail-fallback') || refreshed;
                     }
                 }
             }

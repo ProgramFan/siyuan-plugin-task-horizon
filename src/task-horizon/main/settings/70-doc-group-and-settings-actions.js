@@ -463,11 +463,17 @@
     };
 
     window.updateQuickbarInlineField = async function(field, enabled) {
-        const key = String(field || '').trim();
         const allow = new Set(['custom-status', 'custom-completion-time', 'custom-priority', 'custom-start-date', 'custom-duration', 'custom-remark']);
-        if (!allow.has(key)) return;
+        const rawKey = String(field || '').trim();
+        const customFieldId = __tmParseCustomFieldColumnKey(rawKey);
+        const key = customFieldId ? `customField:${customFieldId}` : rawKey;
+        if (!allow.has(key) && !customFieldId) return;
         const prev = Array.isArray(SettingsStore.data.quickbarInlineFields) ? SettingsStore.data.quickbarInlineFields : ['custom-status', 'custom-completion-time'];
-        const nextSet = new Set(prev.map(v => String(v || '').trim()).filter(v => allow.has(v)));
+        const nextSet = new Set(prev.map((v) => {
+            const prevKey = String(v || '').trim();
+            const prevCustomFieldId = __tmParseCustomFieldColumnKey(prevKey);
+            return prevCustomFieldId ? `customField:${prevCustomFieldId}` : prevKey;
+        }).filter((v) => allow.has(v) || __tmParseCustomFieldColumnKey(v)));
         if (enabled) nextSet.add(key);
         else nextSet.delete(key);
         if (nextSet.size === 0) nextSet.add('custom-status');
@@ -478,12 +484,18 @@
     };
 
     window.updateQuickbarVisibleItem = async function(field, enabled) {
-        const key = String(field || '').trim();
         const allow = new Set(['custom-status', 'custom-priority', 'custom-start-date', 'custom-completion-time', 'custom-duration', 'custom-remark', 'action-ai-title', 'action-reminder', 'action-more']);
-        if (!allow.has(key)) return;
+        const rawKey = String(field || '').trim();
+        const customFieldId = __tmParseCustomFieldColumnKey(rawKey);
+        const key = customFieldId ? `customField:${customFieldId}` : rawKey;
+        if (!allow.has(key) && !customFieldId) return;
         const defaults = ['custom-status', 'custom-priority', 'custom-start-date', 'custom-completion-time', 'custom-duration', 'custom-remark', 'action-ai-title', 'action-reminder', 'action-more'];
         const prev = Array.isArray(SettingsStore.data.quickbarVisibleItems) ? SettingsStore.data.quickbarVisibleItems : defaults;
-        const nextSet = new Set(prev.map(v => String(v || '').trim()).filter(v => allow.has(v)));
+        const nextSet = new Set(prev.map((v) => {
+            const prevKey = String(v || '').trim();
+            const prevCustomFieldId = __tmParseCustomFieldColumnKey(prevKey);
+            return prevCustomFieldId ? `customField:${prevCustomFieldId}` : prevKey;
+        }).filter((v) => allow.has(v) || __tmParseCustomFieldColumnKey(v)));
         if (enabled) nextSet.add(key);
         else nextSet.delete(key);
         SettingsStore.data.quickbarVisibleItems = Array.from(nextSet);
@@ -618,13 +630,15 @@
             ? 'dock'
             : (rawScope === 'desktop' ? 'desktop' : 'mobile');
         const normalizedField = String(fieldKey || '').trim();
-        if (!__TM_CHECKLIST_COMPACT_META_FIELD_OPTIONS.some((item) => item.key === normalizedField)) return;
+        const customFieldId = __tmParseCustomFieldColumnKey(normalizedField);
+        const compactFieldKey = customFieldId ? `customField:${customFieldId}` : normalizedField;
+        if (!__TM_CHECKLIST_COMPACT_META_FIELD_OPTIONS.some((item) => item.key === compactFieldKey) && !customFieldId) return;
         const settingsKey = scopeKey === 'dock'
             ? 'dockChecklistCompactMetaFields'
             : (scopeKey === 'desktop' ? 'desktopChecklistCompactMetaFields' : 'mobileChecklistCompactMetaFields');
         const current = new Set(__tmNormalizeCompactChecklistMetaFields(SettingsStore.data[settingsKey]));
-        if (enabled) current.add(normalizedField);
-        else current.delete(normalizedField);
+        if (enabled) current.add(compactFieldKey);
+        else current.delete(compactFieldKey);
         SettingsStore.data[settingsKey] = __tmNormalizeCompactChecklistMetaFields(Array.from(current), []);
         if (scopeKey === 'dock') {
             SettingsStore.data.mobileChecklistCompactMetaFields = SettingsStore.data[settingsKey].slice();
