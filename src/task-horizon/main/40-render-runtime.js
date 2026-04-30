@@ -4592,6 +4592,22 @@ return;
         return next;
     }
 
+    function __tmGetCollectedOtherBlockTaskFromState(id) {
+        const tid = String(id || '').trim();
+        if (!tid) return null;
+        const direct = globalThis.__tmRuntimeState?.getFlatTaskById?.(tid) || state.flatTasks?.[tid] || null;
+        if (__tmIsCollectedOtherBlockTask(direct)) return direct;
+        const pools = [
+            Array.isArray(state.otherBlocks) ? state.otherBlocks : [],
+            Array.isArray(state.filteredTasks) ? state.filteredTasks : [],
+        ];
+        for (const pool of pools) {
+            const task = pool.find((item) => String(item?.id || '').trim() === tid);
+            if (__tmIsCollectedOtherBlockTask(task)) return task;
+        }
+        return null;
+    }
+
     async function __tmLoadCollectedOtherBlocks(options = {}) {
         const currentGroupId = __tmResolveOtherBlockGroupId(options?.groupId);
         if (currentGroupId) {
@@ -4774,8 +4790,8 @@ return;
     async function __tmResolveCollectedOtherBlockTaskById(id) {
         const tid = String(id || '').trim();
         if (!tid) return null;
-        const existing = globalThis.__tmRuntimeState?.getFlatTaskById?.(tid) || state.flatTasks?.[tid];
-        if (existing && __tmIsCollectedOtherBlockTask(existing)) return existing;
+        const existing = __tmGetCollectedOtherBlockTaskFromState(tid);
+        if (existing) return existing;
         let rows = [];
         try { rows = await API.getOtherBlocksByIds([tid]); } catch (e) { rows = []; }
         const row = Array.isArray(rows) ? rows.find((item) => {
@@ -4800,7 +4816,7 @@ return;
 
     function __tmShowCollectedOtherBlockContextMenu(event, taskId) {
         const tid = String(taskId || '').trim();
-        const task = globalThis.__tmRuntimeState?.getFlatTaskById?.(tid) || state.flatTasks?.[tid];
+        const task = __tmGetCollectedOtherBlockTaskFromState(tid);
         if (!tid || !task) return;
 
         const existingMenu = document.getElementById('tm-task-context-menu');

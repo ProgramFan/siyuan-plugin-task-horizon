@@ -3794,7 +3794,9 @@ hint(`❌ 操作失败: ${e.message}`, 'error');
         event.preventDefault();
         event.stopPropagation();
 
-        const taskForMenu = globalThis.__tmRuntimeState?.getFlatTaskById?.(String(taskId || '').trim()) || state.flatTasks?.[String(taskId || '').trim()];
+        const taskForMenu = __tmGetCollectedOtherBlockTaskFromState(String(taskId || '').trim())
+            || globalThis.__tmRuntimeState?.getFlatTaskById?.(String(taskId || '').trim())
+            || state.flatTasks?.[String(taskId || '').trim()];
         if (__tmIsCollectedOtherBlockTask(taskForMenu)) {
             __tmShowCollectedOtherBlockContextMenu(event, taskId);
             return;
