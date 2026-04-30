@@ -225,8 +225,10 @@ return;
         const visibleDocs = docsForTabs
             .filter((doc) => {
                 const docId = String(doc?.id || '').trim();
+                const hasUndoneTasks = __tmDocHasUndoneTasks(doc);
+                if (!hasUndoneTasks) return false;
                 if (docId && activeDocId && activeDocId !== 'all' && docId === activeDocId) return true;
-                return filteredDocIdSet.size ? filteredDocIdSet.has(docId) : __tmDocHasUndoneTasks(doc);
+                return filteredDocIdSet.size ? filteredDocIdSet.has(docId) : hasUndoneTasks;
             })
             .filter(doc => !globalNewTaskDocId || doc.id !== globalNewTaskDocId);
         const showOtherBlocksTab = currentGroupId !== 'all' && Array.isArray(state.otherBlocks) && state.otherBlocks.length > 0;

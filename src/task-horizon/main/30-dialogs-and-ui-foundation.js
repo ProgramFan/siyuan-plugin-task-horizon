@@ -6797,6 +6797,17 @@ if (mode === 'checklist') {
         if (__tmIsOtherBlockTabId(state.activeDocId) && !hasOtherBlocks) {
             state.activeDocId = 'all';
         }
+        const activeDocIdBeforeFilter = String(state.activeDocId || 'all').trim() || 'all';
+        if (activeDocIdBeforeFilter !== 'all' && !__tmIsOtherBlockTabId(activeDocIdBeforeFilter)) {
+            const activeDoc = (Array.isArray(state.taskTree) ? state.taskTree : [])
+                .find((doc) => String(doc?.id || '').trim() === activeDocIdBeforeFilter);
+            const globalNewTaskDocId = String(SettingsStore.data.newTaskDocId || '').trim();
+            if (activeDocIdBeforeFilter !== globalNewTaskDocId
+                && activeDoc
+                && !__tmDocHasUndoneTasks(activeDoc)) {
+                state.activeDocId = 'all';
+            }
+        }
         const isOtherBlocksActive = __tmIsOtherBlockTabId(state.activeDocId) && hasOtherBlocks;
         const activeDocId = String(state.activeDocId || 'all').trim() || 'all';
 
@@ -6945,10 +6956,22 @@ if (mode === 'checklist') {
         matched.forEach((t) => matchedSet.add(t.id));
 
         const filteredDocIdsForTabs = new Set();
-        const loadedDocIdSet = new Set((Array.isArray(state.taskTree) ? state.taskTree : []).map((doc) => String(doc?.id || '').trim()).filter(Boolean));
+        const loadedDocById = new Map((Array.isArray(state.taskTree) ? state.taskTree : [])
+            .map((doc) => [String(doc?.id || '').trim(), doc])
+            .filter(([id]) => !!id));
+        const docHasUndoneMemo = new Map();
+        const tabDocHasUndoneTasks = (docId) => {
+            const did = String(docId || '').trim();
+            if (!did) return false;
+            if (docHasUndoneMemo.has(did)) return !!docHasUndoneMemo.get(did);
+            const result = __tmDocHasUndoneTasks(loadedDocById.get(did));
+            docHasUndoneMemo.set(did, result);
+            return result;
+        };
         matchedForTabs.forEach((task) => {
+            if (__tmIsCollectedOtherBlockTask(task)) return;
             const docId = String(task?.root_id || task?.docId || '').trim();
-            if (docId && loadedDocIdSet.has(docId)) filteredDocIdsForTabs.add(docId);
+            if (docId && tabDocHasUndoneTasks(docId)) filteredDocIdsForTabs.add(docId);
         });
 
         const buildAncestorSet = (list) => {
@@ -7426,9 +7449,19 @@ if (mode === 'checklist') {
                 }
             } catch (e) {}
         }
-        state.activeDocId = (__tmIsOtherBlockTabId(nextDocId) && !(Array.isArray(state.otherBlocks) && state.otherBlocks.length))
+        let resolvedDocId = (__tmIsOtherBlockTabId(nextDocId) && !(Array.isArray(state.otherBlocks) && state.otherBlocks.length))
             ? 'all'
             : nextDocId;
+        if (resolvedDocId !== 'all' && !__tmIsOtherBlockTabId(resolvedDocId)) {
+            const targetDoc = (Array.isArray(state.taskTree) ? state.taskTree : [])
+                .find((doc) => String(doc?.id || '').trim() === resolvedDocId);
+            const globalNewTaskDocId = String(SettingsStore.data.newTaskDocId || '').trim();
+            if (resolvedDocId !== globalNewTaskDocId
+                && (!targetDoc || !__tmDocHasUndoneTasks(targetDoc))) {
+                resolvedDocId = 'all';
+            }
+        }
+        state.activeDocId = resolvedDocId;
         __tmMarkContextInteractionQuiet('switch-doc', 900);
         try { recalcStats(); } catch (e) {}
         const applied = await __tmApplyCurrentContextViewProfile();
@@ -7940,8 +7973,10 @@ if (mode === 'checklist') {
         return docsForTabs
             .filter((doc) => {
                 const docId = String(doc?.id || '').trim();
+                const hasUndoneTasks = __tmDocHasUndoneTasks(doc);
+                if (!hasUndoneTasks) return false;
                 if (docId && activeDocId && activeDocId !== 'all' && docId === activeDocId) return true;
-                return filteredDocIdSet.size ? filteredDocIdSet.has(docId) : __tmDocHasUndoneTasks(doc);
+                return filteredDocIdSet.size ? filteredDocIdSet.has(docId) : hasUndoneTasks;
             })
             .filter(doc => !globalNewTaskDocId || String(doc?.id || '').trim() !== globalNewTaskDocId)
             .map(doc => ({
