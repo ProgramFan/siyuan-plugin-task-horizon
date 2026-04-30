@@ -1386,7 +1386,7 @@
                     </div>
                 `;
                 return `
-                    <div class="tm-kanban-col" ${dataAttrs} style="${colStyle}">
+                    <div class="tm-kanban-col" ${dataAttrs} style="${colStyle}" ondragover="tmKanbanDragOver(event)" ondragleave="tmKanbanDragLeave(event)" ondrop="tmKanbanDrop(event)">
                         <div class="tm-kanban-col-header" style="${colHeaderBg ? `background:${colHeaderBg};` : ''}">
                             ${titleHtml}
                             ${headerActionsHtml}

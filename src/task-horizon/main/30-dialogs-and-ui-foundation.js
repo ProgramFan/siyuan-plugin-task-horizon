@@ -10538,7 +10538,7 @@ if (mode === 'checklist') {
                     } catch (e) {}
                 }
                 if (sourceType === 'kanban') {
-                    const dropHost = pointTarget?.closest?.('.tm-kanban-group-title, .tm-kanban-group, .tm-kanban-col') || null;
+                    const dropHost = pointTarget?.closest?.('[data-tm-kb-drop-kind], .tm-kanban-col') || null;
                     if (dropHost instanceof Element) {
                         try {
                             const ret = window.tmKanbanDrop?.({

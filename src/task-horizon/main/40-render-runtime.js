@@ -2413,6 +2413,28 @@ return;
         } catch (e) {}
     }
 
+    function __tmResolveKanbanDropHost(ev) {
+        const target = ev?.target instanceof Element ? ev.target : null;
+        const currentTarget = ev?.currentTarget instanceof Element ? ev.currentTarget : null;
+        const targetDrop = target?.closest?.('[data-tm-kb-drop-kind]') || null;
+        if (targetDrop instanceof Element) return targetDrop;
+        const currentDrop = currentTarget?.closest?.('[data-tm-kb-drop-kind]') || null;
+        if (currentDrop instanceof Element) return currentDrop;
+        let el = currentTarget || target;
+        if (!el && Number.isFinite(Number(ev?.clientX)) && Number.isFinite(Number(ev?.clientY))) {
+            try {
+                const point = document.elementFromPoint(Number(ev.clientX), Number(ev.clientY));
+                el = point instanceof Element ? point : null;
+            } catch (e) {
+                el = null;
+            }
+        }
+        const direct = el?.closest?.('.tm-kanban-col') || null;
+        if (direct instanceof Element) return direct;
+        const hover = state.modal?.querySelector?.('.tm-kanban-col.tm-kanban-col--dragover');
+        return hover instanceof Element ? hover : null;
+    }
+
     function __tmKanbanGetCollapsedSet() {
         if (!(state.__tmKanbanCollapsedIds instanceof Set)) state.__tmKanbanCollapsedIds = new Set();
         return state.__tmKanbanCollapsedIds;
@@ -2831,7 +2853,8 @@ return;
     window.tmKanbanDragOver = function(ev) {
         try { ev.preventDefault(); } catch (e) {}
         try { ev.dataTransfer.dropEffect = 'move'; } catch (e) {}
-        const col = ev?.target instanceof Element ? ev.target.closest('.tm-kanban-col') : null;
+        const host = __tmResolveKanbanDropHost(ev);
+        const col = host?.closest?.('.tm-kanban-col') || null;
         if (!col) return;
         try {
             if (!col.classList.contains('tm-kanban-col--dragover')) {
@@ -2842,7 +2865,8 @@ return;
     };
 
     window.tmKanbanDragLeave = function(ev) {
-        const col = ev?.target instanceof Element ? ev.target.closest('.tm-kanban-col') : null;
+        const host = __tmResolveKanbanDropHost(ev);
+        const col = host?.closest?.('.tm-kanban-col') || null;
         if (!col) return;
         const rel = ev?.relatedTarget instanceof Element ? ev.relatedTarget : null;
         if (rel && col.contains(rel)) return;
@@ -2915,7 +2939,8 @@ return;
         try { if (dx) body.scrollLeft += dx; } catch (e) {}
         try {
             if (dy) {
-                const col = ev?.target instanceof Element ? ev.target.closest('.tm-kanban-col') : null;
+                const host = __tmResolveKanbanDropHost(ev);
+                const col = host?.closest?.('.tm-kanban-col') || null;
                 const colBody = col?.querySelector?.('.tm-kanban-col-body');
                 if (colBody) colBody.scrollTop += dy;
             }
@@ -3262,12 +3287,13 @@ return;
                 if (handled) return;
             } catch (e2) {}
             const pointTarget = __tmResolveKanbanPointTarget(lastX, lastY);
-            const dropHost = pointTarget?.closest?.('.tm-kanban-group-title, .tm-kanban-group, .tm-kanban-col') || null;
+            const dropHost = pointTarget?.closest?.('[data-tm-kb-drop-kind], .tm-kanban-col') || null;
             if (!(dropHost instanceof Element)) return;
             try {
                 const ret = window.tmKanbanDrop?.({
                     preventDefault() {},
                     stopPropagation() {},
+                    currentTarget: dropHost,
                     target: dropHost,
                     dataTransfer: {
                         dropEffect: 'move',
@@ -3550,8 +3576,9 @@ return;
         try { ev.preventDefault(); } catch (e) {}
         try { ev.stopPropagation(); } catch (e) {}
 
+        const dropHost = __tmResolveKanbanDropHost(ev);
         // 首先检查是否拖放到组标题（文档标题或标题分组）
-        const dropTarget = ev?.target instanceof Element ? ev.target.closest('[data-tm-kb-drop-kind]') : null;
+        const dropTarget = dropHost?.closest?.('[data-tm-kb-drop-kind]') || null;
         let kind = '';
         let targetDocId = '';
         let targetHeadingId = '';
@@ -3566,7 +3593,7 @@ return;
 
         // 如果没有从组标题获取到数据，则从列元素读取
         if (!kind) {
-            const col = ev?.target instanceof Element ? ev.target.closest('.tm-kanban-col') : null;
+            const col = dropHost?.closest?.('.tm-kanban-col') || null;
             kind = String(col?.dataset?.kind || 'status').trim() || 'status';
             targetDocId = String(col?.dataset?.doc || '').trim();
             targetHeadingId = String(col?.dataset?.heading || '').trim();
@@ -3638,6 +3665,10 @@ return;
             }
             try {
                 await __tmKanbanMoveIdsToStatus(ids, st);
+                try { applyFilters(); } catch (e2) {}
+                if (!__tmRerenderKanbanInPlace(state.modal)) {
+                    try { render(); } catch (e2) {}
+                }
             } catch (e) {
                 hint(`❌ 操作失败: ${e.message}`, 'error');
             }
