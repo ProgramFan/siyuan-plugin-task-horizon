@@ -695,6 +695,27 @@
             try { globalThis.__taskHorizonMarkModified?.(id); } catch (e) {}
             return true;
         },
+        getCollectedOtherBlockIds() {
+            const ids = [];
+            const pushRefs = (refs) => {
+                __tmNormalizeOtherBlockRefs(refs).forEach((item) => {
+                    const id = String(item?.id || '').trim();
+                    if (id) ids.push(id);
+                });
+            };
+            try { pushRefs(SettingsStore.data.otherBlockRefs); } catch (e) {}
+            try {
+                (Array.isArray(SettingsStore.data.docGroups) ? SettingsStore.data.docGroups : []).forEach((group) => {
+                    pushRefs(group?.otherBlockRefs);
+                });
+            } catch (e) {}
+            return Array.from(new Set(ids));
+        },
+        isCollectedOtherBlockId(blockId = '') {
+            const id = String(blockId || '').trim();
+            if (!id) return false;
+            try { return this.getCollectedOtherBlockIds().includes(id); } catch (e) { return false; }
+        },
         refresh() {
             try { globalThis.__taskHorizonRefresh?.(); return true; } catch (e) { return false; }
         }

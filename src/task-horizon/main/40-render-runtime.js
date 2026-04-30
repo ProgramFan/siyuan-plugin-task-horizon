@@ -222,13 +222,15 @@ return;
         const docsForTabs = __tmSortDocEntriesForTabs(state.taskTree || [], currentGroupId);
         const activeDocId = String(state.activeDocId || '').trim();
         const filteredDocIdSet = new Set((Array.isArray(state.filteredDocIdsForTabs) ? state.filteredDocIdsForTabs : []).map((id) => String(id || '').trim()).filter(Boolean));
+        const hasContentFilter = __tmHasActiveDocTabContentFilter(currentRule);
         const visibleDocs = docsForTabs
             .filter((doc) => {
                 const docId = String(doc?.id || '').trim();
-                const hasUndoneTasks = __tmDocHasUndoneTasks(doc);
-                if (!hasUndoneTasks) return false;
+                const shouldShowByTaskState = __tmDocShouldShowInDocTabs(doc, { rule: currentRule });
+                if (!shouldShowByTaskState) return false;
                 if (docId && activeDocId && activeDocId !== 'all' && docId === activeDocId) return true;
-                return filteredDocIdSet.size ? filteredDocIdSet.has(docId) : hasUndoneTasks;
+                if (filteredDocIdSet.size || hasContentFilter) return filteredDocIdSet.has(docId);
+                return shouldShowByTaskState;
             })
             .filter(doc => !globalNewTaskDocId || doc.id !== globalNewTaskDocId);
         const showOtherBlocksTab = currentGroupId !== 'all' && Array.isArray(state.otherBlocks) && state.otherBlocks.length > 0;
@@ -2514,6 +2516,45 @@ return;
         return out;
     }
 
+    function __tmKanbanGetTaskById(taskId) {
+        const tid = String(taskId || '').trim();
+        if (!tid) return null;
+        return globalThis.__tmRuntimeState?.getFlatTaskById?.(tid) || state.flatTasks?.[tid] || null;
+    }
+
+    function __tmKanbanResolveTaskStatusColumnKey(task) {
+        if (!task) return '';
+        const doneBoardEnabled = SettingsStore.data.kanbanHeadingGroupMode === true && !!SettingsStore.data.kanbanShowDoneColumn;
+        if (!!task.done) return doneBoardEnabled ? '__done__' : '';
+        return String(__tmResolveTaskStatusId(task, SettingsStore.data.customStatusOptions || []) || '').trim();
+    }
+
+    function __tmKanbanCollectAttachedStatusDescendantIds(rootId) {
+        const id0 = String(rootId || '').trim();
+        if (!id0) return [];
+        const out = [];
+        const seen = new Set();
+        const walk = (id) => {
+            const tid = String(id || '').trim();
+            if (!tid || seen.has(tid)) return;
+            seen.add(tid);
+            out.push(tid);
+            const task = __tmKanbanGetTaskById(tid);
+            const parentStatusKey = __tmKanbanResolveTaskStatusColumnKey(task);
+            if (!parentStatusKey) return;
+            const kids = Array.isArray(task?.children) ? task.children : [];
+            kids.forEach((child) => {
+                const childId = String(child?.id || '').trim();
+                if (!childId) return;
+                const childTask = __tmKanbanGetTaskById(childId) || child;
+                if (__tmKanbanResolveTaskStatusColumnKey(childTask) !== parentStatusKey) return;
+                walk(childId);
+            });
+        };
+        walk(id0);
+        return out;
+    }
+
     async function __tmWaitForGlobalUnlock(timeoutMs = 8000) {
         const start = Date.now();
         while (GlobalLock.isLocked()) {
@@ -3660,7 +3701,7 @@ return;
             if (SettingsStore.data.kanbanDragSyncSubtasks) {
                 const allIds = new Set(ids);
                 ids.forEach(rootId => {
-                    const descendants = __tmKanbanCollectDescendantIds(rootId);
+                    const descendants = __tmKanbanCollectAttachedStatusDescendantIds(rootId);
                     descendants.forEach(did => allIds.add(did));
                 });
                 ids = Array.from(allIds);
@@ -4592,6 +4633,31 @@ return;
         return next;
     }
 
+    function __tmCacheCollectedOtherBlockTaskInState(task, options = {}) {
+        if (!__tmIsCollectedOtherBlockTask(task)) return null;
+        const tid = String(task?.id || '').trim();
+        if (!tid) return null;
+        const opts = (options && typeof options === 'object') ? options : {};
+        const targetGroupId = __tmResolveOtherBlockGroupId(opts.groupId || task.otherBlockGroupId || '');
+        const nextTask = targetGroupId && String(task.otherBlockGroupId || '').trim() !== targetGroupId
+            ? { ...task, otherBlockGroupId: targetGroupId }
+            : task;
+        if (!state.flatTasks || typeof state.flatTasks !== 'object') state.flatTasks = {};
+        state.flatTasks[tid] = nextTask;
+        if (opts.touchList === false) return nextTask;
+
+        const list = Array.isArray(state.otherBlocks) ? state.otherBlocks.slice() : [];
+        const index = list.findIndex((item) => String(item?.id || '').trim() === tid);
+        if (index >= 0) {
+            list[index] = nextTask;
+            state.otherBlocks = list;
+        } else if (opts.appendToList === true || __tmIsOtherBlockTabId(state.activeDocId)) {
+            list.push(nextTask);
+            state.otherBlocks = list;
+        }
+        return nextTask;
+    }
+
     function __tmGetCollectedOtherBlockTaskFromState(id) {
         const tid = String(id || '').trim();
         if (!tid) return null;
@@ -4619,6 +4685,7 @@ return;
         if (!currentGroupId || !normalizedRefs.length) {
             if (currentGroupId) __tmSetOtherBlockRefsByGroup(currentGroupId, []);
             state.otherBlocks = [];
+            state.flatTasks = __tmMergeOtherBlocksIntoFlatTasks(state.flatTasks);
             if (__tmIsOtherBlockTabId(state.activeDocId)) state.activeDocId = 'all';
             if (currentGroupId && changed && options.persist !== false) {
                 try { await SettingsStore.save(); } catch (e) {}
@@ -4650,6 +4717,7 @@ return;
 
         __tmSetOtherBlockRefsByGroup(currentGroupId, nextRefs);
         state.otherBlocks = nextTasks;
+        state.flatTasks = __tmMergeOtherBlocksIntoFlatTasks(state.flatTasks);
         if (__tmIsOtherBlockTabId(state.activeDocId) && !nextTasks.length) state.activeDocId = 'all';
 
         if (changed && options.persist !== false) {
@@ -4688,9 +4756,11 @@ return;
         let added = 0;
         let existed = 0;
         let invalid = 0;
+        const addedRows = [];
 
         ids.forEach((id) => {
-            if (!rowMap.has(id)) {
+            const row = rowMap.get(id);
+            if (!row) {
                 invalid += 1;
                 return;
             }
@@ -4700,6 +4770,7 @@ return;
             }
             seen.add(id);
             nextRefs.push({ id });
+            addedRows.push(row);
             added += 1;
         });
 
@@ -4726,6 +4797,14 @@ return;
             try { recalcStats(); } catch (e) {}
             try { applyFilters(); } catch (e) {}
             try { if (state.modal) render(); } catch (e) {}
+        } else {
+            addedRows.forEach((row, index) => {
+                try {
+                    const orderIdx = Math.max(0, currentRefs.length + index);
+                    const task = __tmBuildCollectedOtherBlockTask(row, orderIdx, targetGroupId);
+                    __tmCacheCollectedOtherBlockTaskInState(task, { groupId: targetGroupId, touchList: false });
+                } catch (e) {}
+            });
         }
         return { added, existed, invalid, group: __tmGetDocGroupById(targetGroupId), reason: 'added' };
     }
@@ -4799,7 +4878,10 @@ return;
             return rid === tid && __tmIsSupportedOtherBlockType(item?.type, item?.subtype);
         }) : null;
         if (!row) return null;
-        return __tmBuildCollectedOtherBlockTask(row, Number.POSITIVE_INFINITY, '');
+        const task = __tmBuildCollectedOtherBlockTask(row, Number.POSITIVE_INFINITY, __tmResolveOtherBlockGroupId());
+        return __tmCacheCollectedOtherBlockTaskInState(task, {
+            appendToList: __tmIsOtherBlockTabId(state.activeDocId),
+        }) || task;
     }
 
     function __tmEnsureEditableTaskLike(taskOrId, actionLabel = '该操作') {

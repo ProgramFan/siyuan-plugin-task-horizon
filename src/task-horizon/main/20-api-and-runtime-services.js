@@ -13621,17 +13621,22 @@ if (__tmTabEnterAutoRefreshTryCount < 16) {
             return;
         }
         if (kind === 'group') {
-            const row = modal.querySelector(`#tmTaskTable tbody tr[data-group-key="${CSS.escape(key)}"],#tmTimelineLeftTable tbody tr[data-group-key="${CSS.escape(key)}"]`);
-            const t = row?.querySelector?.('.tm-group-toggle');
-            if (t) {
-                const collapsed = action === 'collapse';
+            const collapsed = action === 'collapse';
+            const syncGroupToggle = (root) => {
+                if (!(root instanceof Element)) return false;
+                const t = root.querySelector?.('.tm-group-toggle');
+                if (!t) return false;
                 t.classList.toggle('tm-group-toggle--collapsed', collapsed);
-                row?.querySelectorAll?.('.tm-group-toggle-icon')?.forEach?.((icon) => {
+                root.querySelectorAll?.('.tm-group-toggle-icon')?.forEach?.((icon) => {
                     if (icon instanceof HTMLElement || icon instanceof SVGElement) {
                         icon.style.transform = `rotate(${collapsed ? 0 : 90}deg)`;
                     }
                 });
-            }
+                return true;
+            };
+            const row = modal.querySelector(`#tmTaskTable tbody tr[data-group-key="${CSS.escape(key)}"],#tmTimelineLeftTable tbody tr[data-group-key="${CSS.escape(key)}"]`);
+            syncGroupToggle(row);
+            modal.querySelectorAll?.(`.tm-kanban-group-title[data-group-key="${CSS.escape(key)}"]`)?.forEach?.(syncGroupToggle);
         }
     }
 

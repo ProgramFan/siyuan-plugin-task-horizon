@@ -821,9 +821,9 @@
                         ? ` ondragover="tmKanbanGroupDragOver(event)" ondragleave="tmKanbanGroupDragLeave(event)" ondrop="tmKanbanGroupDrop(event)"`
                         : '';
                     return `
-                        <div class="tm-kanban-group-title${dropKind ? ' tm-kanban-group-title--droppable' : ''}" onclick="tmToggleGroupCollapse('${escSq(groupKey)}', event)" style="${titleColor ? `color:${titleColor};` : ''}${groupBg ? `background:${groupBg};` : ''}"${dropAttrs}${dropHandlers}>
+                        <div class="tm-kanban-group-title${dropKind ? ' tm-kanban-group-title--droppable' : ''}" data-group-key="${esc(groupKey)}" onclick="tmToggleGroupCollapse('${escSq(groupKey)}', event)" style="${titleColor ? `color:${titleColor};` : ''}${groupBg ? `background:${groupBg};` : ''}"${dropAttrs}${dropHandlers}>
                             <span style="display:inline-flex;align-items:center;min-width:0;padding-left:${leftIndent};">
-                                <span class="tm-group-toggle" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:16px;"><svg class="tm-group-toggle-icon" viewBox="0 0 16 16" width="16" height="16"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                                <span class="tm-group-toggle${isCollapsed ? ' tm-group-toggle--collapsed' : ''}" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:16px;"><svg class="tm-group-toggle-icon" viewBox="0 0 16 16" width="16" height="16"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
                                 <span>${titleHtml}</span>
                             </span>
                             <span class="tm-badge tm-badge--count">${Number(count) || 0}</span>
@@ -861,9 +861,9 @@
                         const pinnedBody = pinnedIsCollapsed ? '' : `<div class="tm-kanban-group-items">${allPinned.map(renderPinnedTree).join('')}</div>`;
                         // 自定义渲染置顶分组标题
                         const pinnedTitle = `
-                            <div class="tm-kanban-group-title" onclick="tmToggleGroupCollapse('${escSq(pinnedGroupKey)}', event)" style="background:${pinnedGroupBg};">
+                            <div class="tm-kanban-group-title" data-group-key="${esc(pinnedGroupKey)}" onclick="tmToggleGroupCollapse('${escSq(pinnedGroupKey)}', event)" style="background:${pinnedGroupBg};">
                                 <span style="display:inline-flex;align-items:center;min-width:0;">
-                                    <span class="tm-group-toggle" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:16px;color:var(--tm-text-color);"><svg class="tm-group-toggle-icon" viewBox="0 0 16 16" width="16" height="16"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                                    <span class="tm-group-toggle${pinnedIsCollapsed ? ' tm-group-toggle--collapsed' : ''}" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:16px;color:var(--tm-text-color);"><svg class="tm-group-toggle-icon" viewBox="0 0 16 16" width="16" height="16"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
                                     <span style="color:var(--tm-text-color);">📌 置顶</span>
                                 </span>
                                 <span class="tm-badge tm-badge--count">${allPinned.length}</span>
@@ -1020,9 +1020,9 @@
                         const pinnedBody = pinnedIsCollapsed ? '' : `<div class="tm-kanban-group-items">${allPinned.map(renderPinnedTree).join('')}</div>`;
                         // 自定义渲染置顶分组标题
                         const pinnedTitle = `
-                            <div class="tm-kanban-group-title" onclick="tmToggleGroupCollapse('${escSq(pinnedGroupKey)}', event)" style="background:${pinnedGroupBg};">
+                            <div class="tm-kanban-group-title" data-group-key="${esc(pinnedGroupKey)}" onclick="tmToggleGroupCollapse('${escSq(pinnedGroupKey)}', event)" style="background:${pinnedGroupBg};">
                                 <span style="display:inline-flex;align-items:center;min-width:0;">
-                                    <span class="tm-group-toggle" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:16px;color:var(--tm-text-color);"><svg class="tm-group-toggle-icon" viewBox="0 0 16 16" width="16" height="16"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                                    <span class="tm-group-toggle${pinnedIsCollapsed ? ' tm-group-toggle--collapsed' : ''}" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:16px;color:var(--tm-text-color);"><svg class="tm-group-toggle-icon" viewBox="0 0 16 16" width="16" height="16"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
                                     <span style="color:var(--tm-text-color);">📌 置顶</span>
                                 </span>
                                 <span class="tm-badge tm-badge--count">${allPinned.length}</span>
@@ -1085,9 +1085,9 @@
                         const pinnedBody = pinnedIsCollapsed ? '' : `<div class="tm-kanban-group-items">${allPinned.map(renderPinnedTree).join('')}</div>`;
                         // 自定义渲染置顶分组标题
                         const pinnedTitle = `
-                            <div class="tm-kanban-group-title" onclick="tmToggleGroupCollapse('${escSq(pinnedGroupKey)}', event)" style="background:${pinnedGroupBg};">
+                            <div class="tm-kanban-group-title" data-group-key="${esc(pinnedGroupKey)}" onclick="tmToggleGroupCollapse('${escSq(pinnedGroupKey)}', event)" style="background:${pinnedGroupBg};">
                                 <span style="display:inline-flex;align-items:center;min-width:0;">
-                                    <span class="tm-group-toggle" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:16px;color:var(--tm-text-color);"><svg class="tm-group-toggle-icon" viewBox="0 0 16 16" width="16" height="16"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                                    <span class="tm-group-toggle${pinnedIsCollapsed ? ' tm-group-toggle--collapsed' : ''}" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:16px;color:var(--tm-text-color);"><svg class="tm-group-toggle-icon" viewBox="0 0 16 16" width="16" height="16"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
                                     <span style="color:var(--tm-text-color);">📌 置顶</span>
                                 </span>
                                 <span class="tm-badge tm-badge--count">${allPinned.length}</span>
@@ -1158,9 +1158,9 @@
                         const pinnedBody = pinnedIsCollapsed ? '' : `<div class="tm-kanban-group-items">${allPinned.map(renderPinnedTree).join('')}</div>`;
                         // 自定义渲染置顶分组标题
                         const pinnedTitle = `
-                            <div class="tm-kanban-group-title" onclick="tmToggleGroupCollapse('${escSq(pinnedGroupKey)}', event)" style="background:${pinnedGroupBg};">
+                            <div class="tm-kanban-group-title" data-group-key="${esc(pinnedGroupKey)}" onclick="tmToggleGroupCollapse('${escSq(pinnedGroupKey)}', event)" style="background:${pinnedGroupBg};">
                                 <span style="display:inline-flex;align-items:center;min-width:0;">
-                                    <span class="tm-group-toggle" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:16px;color:var(--tm-text-color);"><svg class="tm-group-toggle-icon" viewBox="0 0 16 16" width="16" height="16"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                                    <span class="tm-group-toggle${pinnedIsCollapsed ? ' tm-group-toggle--collapsed' : ''}" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:16px;color:var(--tm-text-color);"><svg class="tm-group-toggle-icon" viewBox="0 0 16 16" width="16" height="16"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
                                     <span style="color:var(--tm-text-color);">📌 置顶</span>
                                 </span>
                                 <span class="tm-badge tm-badge--count">${allPinned.length}</span>
@@ -1250,9 +1250,9 @@
                         const pinnedBody = pinnedIsCollapsed ? '' : `<div class="tm-kanban-group-items">${allPinned.map(renderPinnedTree).join('')}</div>`;
                         // 自定义渲染置顶分组标题
                         const pinnedTitle = `
-                            <div class="tm-kanban-group-title" onclick="tmToggleGroupCollapse('${escSq(pinnedGroupKey)}', event)" style="background:${pinnedGroupBg};">
+                            <div class="tm-kanban-group-title" data-group-key="${esc(pinnedGroupKey)}" onclick="tmToggleGroupCollapse('${escSq(pinnedGroupKey)}', event)" style="background:${pinnedGroupBg};">
                                 <span style="display:inline-flex;align-items:center;min-width:0;">
-                                    <span class="tm-group-toggle" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:16px;color:var(--tm-text-color);"><svg class="tm-group-toggle-icon" viewBox="0 0 16 16" width="16" height="16"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                                    <span class="tm-group-toggle${pinnedIsCollapsed ? ' tm-group-toggle--collapsed' : ''}" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:16px;color:var(--tm-text-color);"><svg class="tm-group-toggle-icon" viewBox="0 0 16 16" width="16" height="16"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
                                     <span style="color:var(--tm-text-color);">📌 置顶</span>
                                 </span>
                                 <span class="tm-badge tm-badge--count">${allPinned.length}</span>

@@ -795,6 +795,46 @@
         return hasUndone;
     }
 
+    function __tmDocHasAnyTasks(doc) {
+        return !!(doc && Array.isArray(doc.tasks) && doc.tasks.length > 0);
+    }
+
+    function __tmRuleIncludesCompletedForDocTabs(rule) {
+        if (!rule || !Array.isArray(rule.conditions) || rule.conditions.length === 0) return false;
+        return rule.conditions.some((condition) =>
+            condition
+            && condition.field === 'done'
+            && condition.operator === '='
+            && (condition.value === true || String(condition.value) === 'true' || condition.value === '' || String(condition.value) === '__all__')
+        );
+    }
+
+    function __tmRuleExcludesCompletedForDocTabs(rule) {
+        if (!rule || !Array.isArray(rule.conditions) || rule.conditions.length === 0) return false;
+        return rule.conditions.some((condition) =>
+            condition
+            && condition.field === 'done'
+            && condition.operator === '='
+            && String(condition.value) === 'false'
+        );
+    }
+
+    function __tmDocShouldShowInDocTabs(doc, options = {}) {
+        if (!__tmDocHasAnyTasks(doc)) return false;
+        if (__tmDocHasUndoneTasks(doc)) return true;
+        const rule = Object.prototype.hasOwnProperty.call(options || {}, 'rule')
+            ? options.rule
+            : (__tmGetCurrentRule?.() || null);
+        if (__tmRuleExcludesCompletedForDocTabs(rule)) return false;
+        if (__tmRuleIncludesCompletedForDocTabs(rule)) return true;
+        return !state.excludeCompletedTasks;
+    }
+
+    function __tmHasActiveDocTabContentFilter(rule) {
+        if (String(state.searchKeyword || '').trim()) return true;
+        return !!(rule && Array.isArray(rule.conditions) && rule.conditions.length > 0);
+    }
+
     function hint(msg, type) {
         try {
             if (window.__tmBasecoat?.toast) {
@@ -6804,7 +6844,7 @@ if (mode === 'checklist') {
             const globalNewTaskDocId = String(SettingsStore.data.newTaskDocId || '').trim();
             if (activeDocIdBeforeFilter !== globalNewTaskDocId
                 && activeDoc
-                && !__tmDocHasUndoneTasks(activeDoc)) {
+                && !__tmDocShouldShowInDocTabs(activeDoc, { rule: __tmGetCurrentRule() })) {
                 state.activeDocId = 'all';
             }
         }
@@ -6959,19 +6999,19 @@ if (mode === 'checklist') {
         const loadedDocById = new Map((Array.isArray(state.taskTree) ? state.taskTree : [])
             .map((doc) => [String(doc?.id || '').trim(), doc])
             .filter(([id]) => !!id));
-        const docHasUndoneMemo = new Map();
-        const tabDocHasUndoneTasks = (docId) => {
+        const docTabVisibleMemo = new Map();
+        const tabDocShouldShow = (docId) => {
             const did = String(docId || '').trim();
             if (!did) return false;
-            if (docHasUndoneMemo.has(did)) return !!docHasUndoneMemo.get(did);
-            const result = __tmDocHasUndoneTasks(loadedDocById.get(did));
-            docHasUndoneMemo.set(did, result);
+            if (docTabVisibleMemo.has(did)) return !!docTabVisibleMemo.get(did);
+            const result = __tmDocShouldShowInDocTabs(loadedDocById.get(did), { rule });
+            docTabVisibleMemo.set(did, result);
             return result;
         };
         matchedForTabs.forEach((task) => {
             if (__tmIsCollectedOtherBlockTask(task)) return;
             const docId = String(task?.root_id || task?.docId || '').trim();
-            if (docId && tabDocHasUndoneTasks(docId)) filteredDocIdsForTabs.add(docId);
+            if (docId && tabDocShouldShow(docId)) filteredDocIdsForTabs.add(docId);
         });
 
         const buildAncestorSet = (list) => {
@@ -7457,7 +7497,7 @@ if (mode === 'checklist') {
                 .find((doc) => String(doc?.id || '').trim() === resolvedDocId);
             const globalNewTaskDocId = String(SettingsStore.data.newTaskDocId || '').trim();
             if (resolvedDocId !== globalNewTaskDocId
-                && (!targetDoc || !__tmDocHasUndoneTasks(targetDoc))) {
+                && (!targetDoc || !__tmDocShouldShowInDocTabs(targetDoc, { rule: __tmGetCurrentRule() }))) {
                 resolvedDocId = 'all';
             }
         }
@@ -7970,13 +8010,16 @@ if (mode === 'checklist') {
         const globalNewTaskDocId = String(SettingsStore.data.newTaskDocId || '').trim();
         const activeDocId = String(state.activeDocId || '').trim();
         const filteredDocIdSet = new Set((Array.isArray(state.filteredDocIdsForTabs) ? state.filteredDocIdsForTabs : []).map((id) => String(id || '').trim()).filter(Boolean));
+        const rule = __tmGetCurrentRule();
+        const hasContentFilter = __tmHasActiveDocTabContentFilter(rule);
         return docsForTabs
             .filter((doc) => {
                 const docId = String(doc?.id || '').trim();
-                const hasUndoneTasks = __tmDocHasUndoneTasks(doc);
-                if (!hasUndoneTasks) return false;
+                const shouldShowByTaskState = __tmDocShouldShowInDocTabs(doc, { rule });
+                if (!shouldShowByTaskState) return false;
                 if (docId && activeDocId && activeDocId !== 'all' && docId === activeDocId) return true;
-                return filteredDocIdSet.size ? filteredDocIdSet.has(docId) : hasUndoneTasks;
+                if (filteredDocIdSet.size || hasContentFilter) return filteredDocIdSet.has(docId);
+                return shouldShowByTaskState;
             })
             .filter(doc => !globalNewTaskDocId || String(doc?.id || '').trim() !== globalNewTaskDocId)
             .map(doc => ({

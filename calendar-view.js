@@ -2196,6 +2196,9 @@
         );
         const monthAdaptiveRowHeight = nextSettings?.monthAdaptiveRowHeight !== false
             && nextSettings?.calendarMonthAdaptiveRowHeight !== false;
+        try { targetRoot?.classList.toggle('tm-calendar-root--month-view', isMonthView); } catch (e) {}
+        try { targetWrap?.classList.toggle('tm-calendar-wrap--month-view', isMonthView); } catch (e) {}
+        try { targetHost?.classList.toggle('tm-calendar-host--month-view', isMonthView); } catch (e) {}
         const viewportHeight = (() => {
             const rootRectHeight = Number(targetRoot?.getBoundingClientRect?.().height || 0);
             const rootClientHeight = Number(targetRoot?.clientHeight || 0);
@@ -2214,6 +2217,16 @@
             ? getMainCalendarMonthFitMetrics(targetRoot, targetHost, viewportHeight, monthMinVisibleEvents)
             : { rowHeight: 0, visibleEvents: monthMinVisibleEvents };
         const monthVisibleEvents = normalizeCalendarMonthMinVisibleEvents(monthFitMetrics.visibleEvents);
+        const monthToolbarStickyOffset = (() => {
+            if (!isMonthView || !(targetHost instanceof HTMLElement)) return 0;
+            const toolbar = targetHost.querySelector('.fc-toolbar.fc-header-toolbar, .fc-header-toolbar');
+            if (!(toolbar instanceof HTMLElement)) return 0;
+            try {
+                const height = Math.ceil(toolbar.getBoundingClientRect().height || toolbar.offsetHeight || 0);
+                return height > 0 ? height : 0;
+            } catch (e) {}
+            return 0;
+        })();
         const targets = [targetRoot, targetWrap, targetHost];
         for (const el of targets) {
             if (!(el instanceof HTMLElement)) continue;
@@ -2228,10 +2241,12 @@
             } else {
                 try { el.style.removeProperty('--tm-calendar-month-viewport-height'); } catch (e) {}
             }
+            if (isMonthView && monthToolbarStickyOffset > 0) {
+                try { el.style.setProperty('--tm-calendar-month-toolbar-sticky-offset', `${monthToolbarStickyOffset}px`); } catch (e) {}
+            } else {
+                try { el.style.removeProperty('--tm-calendar-month-toolbar-sticky-offset'); } catch (e) {}
+            }
         }
-        try { targetRoot?.classList.toggle('tm-calendar-root--month-view', isMonthView); } catch (e) {}
-        try { targetWrap?.classList.toggle('tm-calendar-wrap--month-view', isMonthView); } catch (e) {}
-        try { targetHost?.classList.toggle('tm-calendar-host--month-view', isMonthView); } catch (e) {}
         if (!targetCalendar) return isMonthView;
         const desiredHeight = isMonthView ? 'auto' : 'parent';
         try {

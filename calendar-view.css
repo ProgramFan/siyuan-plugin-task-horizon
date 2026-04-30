@@ -99,6 +99,26 @@
     overflow: visible !important;
 }
 
+.tm-calendar-host--month-view .fc .fc-toolbar.fc-header-toolbar,
+.tm-calendar-host--month-view.fc .fc-toolbar.fc-header-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    margin: 0;
+    padding: 4px 8px 6px;
+    background: var(--fc-page-bg-color, var(--tm-bg-color, var(--tm-section-bg)));
+    border-bottom: 1px solid var(--tm-border-color);
+}
+
+.tm-calendar-host--month-view .fc .fc-dayGridMonth-view .fc-scrollgrid-section-header > *,
+.tm-calendar-host--month-view.fc .fc-dayGridMonth-view .fc-scrollgrid-section-header > * {
+    position: sticky !important;
+    top: var(--tm-calendar-month-toolbar-sticky-offset, 41px) !important;
+    z-index: 29 !important;
+    background: var(--fc-page-bg-color, var(--tm-bg-color, var(--tm-section-bg)));
+    box-shadow: 0 1px 0 var(--tm-border-color);
+}
+
 @media (max-width: 768px) {
     .tm-calendar-wrap--mobile .tm-calendar-sidebar-resizer {
         display: none;
