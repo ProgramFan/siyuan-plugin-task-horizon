@@ -4699,14 +4699,18 @@
         function getInlineDirectionalTaskBlocks(upBuffer = 360, downBuffer = 360, maxCount = 96) {
             const viewportTop = 0 - Math.max(0, Number(upBuffer) || 0);
             const viewportBottom = (window.innerHeight || document.documentElement?.clientHeight || 0) + Math.max(0, Number(downBuffer) || 0);
-            // Fall back to the observed set whenever the IntersectionObserver
-            // hasn't dispatched yet (initial entries fire async, so the very
-            // first render after a tab switch / loaded-protyle-static would
-            // otherwise paint nothing on docs with more than a handful of
-            // tasks). The viewport rect filter below caps the actual work.
-            const sourceBlocks = inlineMetaVisibleTaskBlocks.size
-                ? Array.from(inlineMetaVisibleTaskBlocks.values())
-                : Array.from(inlineMetaObservedTaskBlocks.values());
+            // Always source from the observed set. The IO-driven visible
+            // set lags behind reality on tab switches (IO entries are
+            // delivered async; the newly-activated tab's blocks aren't
+            // in visible yet, while the previously-active tab's blocks
+            // may still linger). Driving keepBlocks/coreBlocks from the
+            // lagged visible set caused prune to evict hosts of the
+            // active tab right after a switch, and the user only saw
+            // them reappear once a mouseover re-triggered render. The
+            // observed set is updated synchronously by sync, so it
+            // always reflects the currently-active protyles. The rect
+            // filter below caps the work to blocks near the viewport.
+            const sourceBlocks = Array.from(inlineMetaObservedTaskBlocks.values());
             const out = [];
             const seen = new Set();
             for (let i = 0; i < sourceBlocks.length; i += 1) {
@@ -4735,12 +4739,11 @@
             const preDown = dir > 0 ? 3200 : (dir < 0 ? 900 : 2200);
             const keepUp = dir > 0 ? 1400 : (dir < 0 ? 4200 : 3200);
             const keepDown = dir > 0 ? 4200 : (dir < 0 ? 1400 : 3200);
-            // Same fallback as getInlineDirectionalTaskBlocks: when IO
-            // entries haven't dispatched yet, render from the observed set so
-            // freshly-switched tabs don't paint blank until the user scrolls.
-            const sourceBlocks = inlineMetaVisibleTaskBlocks.size
-                ? Array.from(inlineMetaVisibleTaskBlocks.values())
-                : Array.from(inlineMetaObservedTaskBlocks.values());
+            // Always source from observed (see getInlineDirectionalTaskBlocks
+            // for rationale). Prune and keep decisions need a synchronously-
+            // accurate picture of the active tab's blocks; the IO-driven
+            // visible set lags on tab switches.
+            const sourceBlocks = Array.from(inlineMetaObservedTaskBlocks.values());
             const buckets = { coreBlocks: [], preRenderBlocks: [], keepBlocks: [] };
             const seen = new Set();
             for (let i = 0; i < sourceBlocks.length; i += 1) {
@@ -5374,6 +5377,15 @@
                     //   Trust the textSig/widthSig signatures to invalidate
                     //   per-host when content shifted.
                     const wakeFromProtyleEvent = (delayMs = 40, e = null, mode = 'mount') => {
+                        // Bump the prune-defer window for tab switches /
+                        // protyle loads. Without this, a switch back to
+                        // a doc that hasn't been scrolled in >2.5s would
+                        // let pruneInlineMetaOutsideViewport fire on the
+                        // first post-wake render, evicting hosts before
+                        // the new render pass had a chance to lay them
+                        // out. The chip would disappear and only reappear
+                        // after the next mouseover-induced re-render.
+                        inlineMetaRecentScrollUntil = Math.max(inlineMetaRecentScrollUntil, Date.now() + 2500);
                         const protyle = e?.protyle || e?.detail?.protyle || null;
                         const wysiwygEl = protyle?.wysiwyg?.element || null;
                         const hint = wysiwygEl?.closest?.('.protyle') || wysiwygEl || null;
@@ -5503,32 +5515,26 @@
                 if (editing && prevLayout) {
                     return true;
                 }
-                // During scroll, transient measurement failures (0×0
-                // rects mid-virtualization, missing text anchors while
-                // the row is repainting) flicker is-ready off. Preserve
-                // the cache so the caller's prev-layout restore keeps
-                // the chip pinned across frames; next successful pass
-                // re-anchors. Without preservation, one strip evicts the
-                // cache and every subsequent tick has nothing to fall
-                // back on.
-                if (inlineMetaScrolling && prevLayout) {
-                    return false;
-                }
-                host.classList.remove('is-ready');
-                inlineMetaLayoutCache.delete(taskId);
+                // Transient measurement failure (0×0 rect during SiYuan
+                // virtualization repaint, missing text anchor while the
+                // row is being mounted, layer with no dimensions during
+                // a tab transition). Never strip is-ready or evict the
+                // layout cache here — that's what flickers the chip
+                // until the next render. The host keeps its last good
+                // style, the cache keeps its last good prevLayout, and
+                // the next layoutInlineMetaHost pass updates the chip
+                // once measurements are valid again. The caller's
+                // prev-layout restore (refreshInlineMetaPositions) may
+                // also re-apply cached styles on this returned false.
                 return false;
             }
             if (!isInlineRectVisibleInBounds(textRect, bounds, visibilityBuffer)) {
-                // Same preservation: a row that has crossed the protyle
-                // viewport edge mid-scroll keeps its cached position.
-                // protyle-content clips out-of-bounds hosts so nothing
-                // paints outside; the chip stays where it last sat and
-                // re-anchors when the row scrolls back in.
-                if (inlineMetaScrolling && prevLayout) {
-                    return false;
-                }
-                host.classList.remove('is-ready');
-                inlineMetaLayoutCache.delete(taskId);
+                // Block is offscreen. Don't strip is-ready — the chip
+                // stays at its last visible position, which is clipped
+                // by protyle-content's overflow:auto. When the row
+                // scrolls back into the protyle viewport, the next
+                // refreshInlineMetaPositions pass writes a fresh
+                // position and the chip seamlessly re-anchors.
                 return false;
             }
             const localTextRect = {
@@ -5609,17 +5615,14 @@
                     inlineMetaLayoutCache.set(taskId, { textSig, widthSig, viewportSig, html: layoutHtml, left: leftPx, top: topPx, maxWidth: maxWidthPx, wrapMode, hostWidth: estHostWidth, hostHeight: estHostHeight });
                     return true;
                 }
-                // Same preservation as the failure paths above: during
-                // scroll, transient collisions (e.g. a sibling chip's
-                // rect briefly overlapping ours as positions shift each
-                // RAF) shouldn't strip is-ready and evict the cache —
-                // that breaks the prev-layout restore chain across
-                // frames.
-                if (inlineMetaScrolling && prevLayout) {
-                    return false;
-                }
-                host.classList.remove('is-ready');
-                inlineMetaLayoutCache.delete(taskId);
+                // Same preservation as the failure paths above:
+                // collisions are usually transient (a sibling chip's
+                // rect briefly overlaps ours while positions shift on
+                // a scroll tick). Stripping is-ready here was the
+                // primary flicker source — sibling chips bouncing as
+                // they re-collide on every render. The chip keeps its
+                // last position; the next layout pass after the
+                // sibling moves resolves the collision cleanly.
                 return false;
             }
             // --- WRITE PHASE: batch all DOM writes together ---
@@ -5684,10 +5687,16 @@
             for (let i = 0; i < entries.length; i++) {
                 const e = entries[i];
                 if (e.skip) {
-                    if (!inlineMetaScrolling) {
-                        e.host.classList.remove('is-ready');
-                        inlineMetaLayoutCache.delete(e.taskId);
-                    }
+                    // Block is missing from DOM (SiYuan may have
+                    // virtualized it, or it's truly gone). Don't strip
+                    // is-ready here either — the chip's host stays in
+                    // its layer at its last position. If the block
+                    // truly is gone for good, pruneInlineMetaOutsideViewport
+                    // removes the host once the recent-scroll grace
+                    // window expires; meanwhile a re-materialized row
+                    // (back-and-forth scroll, virtualization reflow)
+                    // finds its chip already in place and just gets a
+                    // fresh position from the next successful pass.
                     continue;
                 }
                 const prevLayout = inlineMetaScrolling ? inlineMetaLayoutCache.get(e.taskId) : null;
@@ -5732,7 +5741,15 @@
             const runtimeProps = hasRemarkInlineField ? null : (hasDateInlineField ? getRuntimeTaskCustomProps(taskId, blockEl) : null);
             const hasCacheForRender = inlineMetaCache.has(taskId) && !runtimeProps?.props;
             const hasCached = hasCacheForRender && !forceRefresh;
-            if (hasDateInlineField && !runtimeProps?.props && !hasCacheForRender) host.classList.remove('is-ready');
+            // (Removed an aggressive is-ready strip here: when a date
+            // field was configured and neither runtime props nor cache
+            // were available, the original code blanked the chip until
+            // fresh props arrived. For an already-rendered chip this
+            // produced a visible blink on every render where the cache
+            // had been wiped or the runtime task wasn't registered yet.
+            // The applyFreshProps callback below updates innerHTML when
+            // fresh data actually differs, so the strip wasn't load-
+            // bearing — it was just a flicker source.)
             if (runtimeProps?.props) {
                 setInlineMetaCache(taskId, runtimeProps.props);
                 if (runtimeProps.taskId && runtimeProps.taskId !== taskId) setInlineMetaCache(runtimeProps.taskId, runtimeProps.props);
