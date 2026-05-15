@@ -5129,7 +5129,17 @@
                     try { io.unobserve(prevEl); } catch (e) {}
                 }
                 inlineMetaVisibleTaskBlocks.delete(blockId);
-                inlineMetaLayoutCache.delete(blockId);
+                // Intentionally NOT deleting inlineMetaLayoutCache here.
+                // The cache stays alive even when the block leaves the
+                // observed scan. Scroll-back-and-forth past SiYuan's
+                // virtualization boundary fires this eviction at the 150ms
+                // scroll-idle threshold (a brief reversal pause is enough),
+                // and wiping the cache here would leave prevLayout=undefined
+                // for the re-materialized block — the preserve guards in
+                // layoutInlineMetaHost then fail and a transient measurement
+                // failure strips is-ready, flickering the chip. The cache
+                // is reclaimed via pruneInlineMetaOutsideViewport once
+                // the block is genuinely far from the viewport.
             });
             const viewportHeight = window.innerHeight || document.documentElement?.clientHeight || 0;
             nextBlocks.forEach((nextEl, blockId) => {
@@ -5248,7 +5258,19 @@
                     return structural;
                 });
                 inlineMetaNeedSyncBlocks = true;
-                if (hasStructuralChange && !inlineMetaScrolling) {
+                // Cache invalidation here is intended for *edit-driven*
+                // mutations (user inserted/removed a task), where blocks
+                // at or after the topmost-affected anchor have shifted
+                // and their cached left/top is stale. Scroll-driven
+                // mutations from SiYuan's lazy virtualization look the
+                // same to MutationObserver, but those blocks DON'T move —
+                // they're just added/removed from DOM at their natural
+                // position, so the cache stays accurate. The guards below
+                // distinguish: skip during active scroll AND during the
+                // recent-scroll grace window, so virtualization mutations
+                // delivered shortly after a scroll-idle threshold don't
+                // wipe cache for blocks the user is about to revisit.
+                if (hasStructuralChange && !inlineMetaScrolling && Date.now() >= inlineMetaRecentScrollUntil) {
                     inlineMetaMutationHasStructural = true;
                     if (topmostAffected instanceof Element) {
                         // Targeted invalidation: only cache entries whose blocks
