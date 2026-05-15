@@ -140,6 +140,7 @@
     let inlineMetaPropsInflight = new Map();
     let inlineMetaScrollDirection = 0;
     let inlineMetaLastScrollPos = 0;
+    let inlineMetaRecentScrollUntil = 0;
     let inlineMetaWsHandler = null;
     let inlineMetaWsTimer = null;
     let inlineMetaIsComposing = false;
@@ -4805,6 +4806,15 @@
             // The scroll-idle render pass runs this same prune with a
             // stable keep set.
             if (inlineMetaScrolling) return;
+            // Also defer for a grace window after the most recent scroll
+            // event. Back-and-forth scrolling typically pauses 200–500ms
+            // at the direction reversal — that crosses the 150ms
+            // scroll-idle threshold and would fire prune mid-pause. The
+            // reverse scroll then has to rebuild any chip whose owner
+            // sat just outside the keep zone. Extending the prune
+            // deferral past the layout-idle threshold lets the user
+            // oscillate freely without losing edge hosts.
+            if (Date.now() < inlineMetaRecentScrollUntil) return;
             const keepIds = new Set();
             (keepBlocks || []).forEach((blockEl) => {
                 collectInlineMetaOwnerIds(blockEl).forEach((id) => keepIds.add(id));
@@ -5865,6 +5875,16 @@
                     return;
                 }
                 setInlineMetaScrolling(true);
+                // Grace window for pruning after each scroll event. The
+                // 150ms scroll-idle threshold below is fine for ending
+                // the is-scrolling class and re-running layout, but
+                // back-and-forth scrolling typically pauses 200–500ms
+                // at the direction reversal. If pruning fires during
+                // that pause, hosts at the keep-zone edge get evicted
+                // and the reverse scroll then has to rebuild them.
+                // Extending the prune deferral past the layout-idle
+                // threshold keeps those hosts alive across the reversal.
+                inlineMetaRecentScrollUntil = Date.now() + 2500;
                 if (e?.type !== 'resize') {
                     pos = getInlineScrollPositionFromEventTarget(e?.target || document.documentElement);
                     delta = pos - inlineMetaLastScrollPos;
