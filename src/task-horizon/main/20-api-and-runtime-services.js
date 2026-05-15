@@ -6191,6 +6191,67 @@
         return hit ? hit.opacity : null;
     }
 
+    function __tmRelativeLuminanceFromRgba(rgba, fallback = 1) {
+        if (!rgba) return fallback;
+        const channel = (value) => {
+            const v = __tmClamp(Number(value) || 0, 0, 255) / 255;
+            return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+        };
+        return (0.2126 * channel(rgba.r)) + (0.7152 * channel(rgba.g)) + (0.0722 * channel(rgba.b));
+    }
+
+    function __tmContrastRatioFromRgba(a, b) {
+        const l1 = __tmRelativeLuminanceFromRgba(a, 1);
+        const l2 = __tmRelativeLuminanceFromRgba(b, 0);
+        const light = Math.max(l1, l2);
+        const dark = Math.min(l1, l2);
+        return (light + 0.05) / (dark + 0.05);
+    }
+
+    function __tmCompositeRgbaOver(base, bg) {
+        const a = __tmClamp(Number(base?.a ?? 1), 0, 1);
+        const ba = __tmClamp(Number(bg?.a ?? 1), 0, 1);
+        const outA = a + ba * (1 - a);
+        if (outA <= 0) return { r: 0, g: 0, b: 0, a: 0 };
+        return {
+            r: ((Number(base?.r) || 0) * a + (Number(bg?.r) || 0) * ba * (1 - a)) / outA,
+            g: ((Number(base?.g) || 0) * a + (Number(bg?.g) || 0) * ba * (1 - a)) / outA,
+            b: ((Number(base?.b) || 0) * a + (Number(bg?.b) || 0) * ba * (1 - a)) / outA,
+            a: outA,
+        };
+    }
+
+    function __tmGetTaskTitleReadabilityBackground(isDark) {
+        const palette = __tmBuildThemePalette(SettingsStore?.data?.themeConfig, isDark);
+        return __tmParseCssColorToRgba(palette.card)
+            || __tmParseCssColorToRgba(palette.background)
+            || (isDark ? { r: 18, g: 24, b: 38, a: 1 } : { r: 255, g: 255, b: 255, a: 1 });
+    }
+
+    function __tmGetReadablePriorityTitleColor(color, opacity) {
+        const darkMode = __tmIsDarkMode();
+        const normalized = __tmNormalizeHexColor(color, '');
+        if (!normalized) return String(color || '').trim();
+        const fg = __tmParseCssColorToRgba(normalized);
+        if (!fg) return normalized;
+        const bg = __tmGetTaskTitleReadabilityBackground(darkMode);
+        const alpha = __tmClamp(Number(opacity), darkMode ? 0.82 : 0.2, 1);
+        const effective = __tmCompositeRgbaOver({ ...fg, a: alpha * __tmClamp(Number(fg.a ?? 1), 0, 1) }, bg);
+        const minRatio = darkMode ? 4.5 : 3.6;
+        if (__tmContrastRatioFromRgba(effective, bg) >= minRatio) return normalized;
+        const target = darkMode
+            ? (__tmParseCssColorToRgba('var(--tm-text-color)') || { r: 238, g: 242, b: 247, a: 1 })
+            : { r: 15, g: 23, b: 42, a: 1 };
+        let best = fg;
+        for (let i = 1; i <= 8; i += 1) {
+            const mixed = __tmMixRgb(fg, target, i / 8);
+            const nextEffective = __tmCompositeRgbaOver({ ...mixed, a: alpha * __tmClamp(Number(mixed.a ?? 1), 0, 1) }, bg);
+            best = mixed;
+            if (__tmContrastRatioFromRgba(nextEffective, bg) >= minRatio) break;
+        }
+        return `rgb(${Math.round(best.r)}, ${Math.round(best.g)}, ${Math.round(best.b)})`;
+    }
+
     function __tmResolveTaskTitleVisual(taskLike, config = null) {
         const task = (taskLike && typeof taskLike === 'object') ? taskLike : null;
         if (!task) return null;
@@ -6207,7 +6268,10 @@
             return spanA - spanB || a.index - b.index;
         });
         const hit = sorted.find((row) => score >= row.minScore && score <= row.maxScore);
-        return hit ? { opacity: hit.opacity, color: task.done === true ? '' : hit.color } : null;
+        if (!hit) return null;
+        const opacity = __tmIsDarkMode() ? Math.max(0.82, Number(hit.opacity) || 1) : hit.opacity;
+        const color = task.done === true ? '' : __tmGetReadablePriorityTitleColor(hit.color, opacity);
+        return { opacity, color };
     }
 
     function __tmApplyTaskTitleOpacityToElement(el, taskLike, config = null) {
